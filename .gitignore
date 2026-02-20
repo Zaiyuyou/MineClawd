@@ -20,6 +20,10 @@ bin/
 # Fabric / Loom / KubeJS specific
 /kubejs/server_scripts/mineclawd-internal-api.js
 
+# Runs
+
+**/run/
+
 # IDEs
 /.idea/
 *.iml
