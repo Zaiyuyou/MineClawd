@@ -7,7 +7,6 @@ import com.google.gson.JsonParser;
 import com.mineclawd.assets.AssetsOverlayPayload;
 import com.mineclawd.client.AgentResponseOverlay;
 import com.mineclawd.config.MineClawdConfig;
-import com.mineclawd.config.MineClawdConfigScreen;
 import com.mineclawd.dynamic.DynamicContentRegistry;
 import com.mineclawd.question.QuestionPromptPayload;
 import com.mineclawd.session.SessionOverlayPayload;
@@ -19,6 +18,7 @@ import dev.architectury.event.events.client.ClientTickEvent;
 import dev.architectury.networking.NetworkManager;
 import io.netty.buffer.Unpooled;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.BookScreen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.PacketByteBuf;
@@ -39,6 +39,7 @@ import java.util.Locale;
 
 public final class MineClawdClientNetworking {
     private static final int HISTORY_PACKET_MAX_CHARS = 262_144;
+    private static final boolean HAS_YACL = hasClass("dev.isxander.yacl3.api.YetAnotherConfigLib");
     private static boolean initialized = false;
 
     private MineClawdClientNetworking() {
@@ -63,13 +64,7 @@ public final class MineClawdClientNetworking {
                     }
                     String finalBroadcastTarget = broadcastTarget;
                     MinecraftClient client = MinecraftClient.getInstance();
-                    client.execute(() -> {
-                        if (!isGuiEnabled()) {
-                            return;
-                        }
-                        MineClawdConfigScreen.syncBroadcastTargetFromServer(finalBroadcastTarget);
-                        client.setScreen(MineClawdConfigScreen.create(client.currentScreen, finalBroadcastTarget));
-                    });
+                    client.execute(() -> openConfigScreen(client, finalBroadcastTarget));
                 });
 
         NetworkManager.registerReceiver(NetworkManager.s2c(), MineClawdNetworking.SYNC_BROADCAST_TARGET,
@@ -80,7 +75,7 @@ public final class MineClawdClientNetworking {
                     }
                     String finalBroadcastTarget = broadcastTarget;
                     MinecraftClient client = MinecraftClient.getInstance();
-                    client.execute(() -> MineClawdConfigScreen.syncBroadcastTargetFromServer(finalBroadcastTarget));
+                    client.execute(() -> syncBroadcastTargetFromServer(finalBroadcastTarget));
                 });
 
         NetworkManager.registerReceiver(NetworkManager.s2c(), MineClawdNetworking.SYNC_ASSISTIVE_TOUCH,
@@ -220,9 +215,56 @@ public final class MineClawdClientNetworking {
 
         ClientPlayerEvent.CLIENT_PLAYER_JOIN.register(player -> sendClientReadyPing());
         ClientPlayerEvent.CLIENT_PLAYER_QUIT.register(player -> {
-            MineClawdConfigScreen.clearBroadcastTargetServerSync();
+            clearBroadcastTargetServerSync();
             AgentResponseOverlay.onClientPlayerQuit();
         });
+    }
+
+    private static boolean hasClass(String className) {
+        try {
+            Class.forName(className, false, MineClawdClientNetworking.class.getClassLoader());
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static void openConfigScreen(MinecraftClient client, String broadcastTarget) {
+        if (!isGuiEnabled()) {
+            return;
+        }
+        if (!HAS_YACL) {
+            if (client.player != null) {
+                client.player.sendMessage(Text.literal("[MineClawd] Config UI requires YACL on this client."), false);
+            }
+            return;
+        }
+        syncBroadcastTargetFromServer(broadcastTarget);
+        try {
+            Class<?> cls = Class.forName("com.mineclawd.config.MineClawdConfigScreen");
+            Method create = cls.getMethod("create", Screen.class, String.class);
+            Object screen = create.invoke(null, client.currentScreen, broadcastTarget);
+            if (screen instanceof Screen s) client.setScreen(s);
+        } catch (ReflectiveOperationException ignored) {
+        }
+    }
+
+    private static void syncBroadcastTargetFromServer(String value) {
+        if (!HAS_YACL) return;
+        try {
+            Class<?> cls = Class.forName("com.mineclawd.config.MineClawdConfigScreen");
+            cls.getMethod("syncBroadcastTargetFromServer", String.class).invoke(null, value);
+        } catch (ReflectiveOperationException ignored) {
+        }
+    }
+
+    private static void clearBroadcastTargetServerSync() {
+        if (!HAS_YACL) return;
+        try {
+            Class<?> cls = Class.forName("com.mineclawd.config.MineClawdConfigScreen");
+            cls.getMethod("clearBroadcastTargetServerSync").invoke(null);
+        } catch (ReflectiveOperationException ignored) {
+        }
     }
 
     private static void sendClientReadyPing() {
