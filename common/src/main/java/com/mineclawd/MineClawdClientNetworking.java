@@ -210,13 +210,11 @@ public final class MineClawdClientNetworking {
             return handled ? EventResult.interruptFalse() : EventResult.pass();
         });
         ClientScreenInputEvent.KEY_PRESSED_PRE.register((client, screen, keyCode, scanCode, modifiers) -> {
-            boolean handled = AgentResponseOverlay.keyPressed(client, keyCode, scanCode, modifiers)
-                    || AgentResponseOverlay.capturesKeyboardInput(client);
+            boolean handled = AgentResponseOverlay.keyPressed(client, keyCode, scanCode, modifiers);
             return handled ? EventResult.interruptFalse() : EventResult.pass();
         });
         ClientScreenInputEvent.CHAR_TYPED_PRE.register((client, screen, character, keyCode) -> {
-            boolean handled = AgentResponseOverlay.charTyped(client, character, keyCode)
-                    || AgentResponseOverlay.capturesKeyboardInput(client);
+            boolean handled = AgentResponseOverlay.charTyped(client, character, keyCode);
             return handled ? EventResult.interruptFalse() : EventResult.pass();
         });
 
