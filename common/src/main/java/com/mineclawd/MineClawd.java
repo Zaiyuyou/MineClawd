@@ -26,6 +26,7 @@ import com.mineclawd.llm.VertexAIClient;
 import com.mineclawd.llm.VertexAIMessage;
 import com.mineclawd.llm.VertexAIResponse;
 import com.mineclawd.llm.VertexAIToolCall;
+import com.mineclawd.mod.ModDocsToolExecutor;
 import com.mineclawd.persona.PersonaManager;
 import com.mineclawd.persona.PersonaManager.Persona;
 import com.mineclawd.player.PlayerSettingsManager;
@@ -115,6 +116,9 @@ public class MineClawd {
     private static final String TOOL_APPLY_INSTANT_SERVER_SCRIPT = "apply-instant-server-script";
     private static final String TOOL_ASK_USER = "ask-user-question";
     private static final String TOOL_EXECUTE_COMMAND = "execute-command";
+    private static final String TOOL_LIST_MODS = "list_mods";
+    private static final String TOOL_LIST_COMMANDS = "list_commands";
+    private static final String TOOL_FETCH_MOD_DOCS = "fetch_mod_docs";
     private static final String TOOL_LIST_SERVER_SCRIPTS = "list-server-scripts";
     private static final String TOOL_READ_SERVER_SCRIPT = "read-server-script";
     private static final String TOOL_WRITE_SERVER_SCRIPT = "write-server-script";
@@ -198,6 +202,11 @@ public class MineClawd {
         "- `execute-command`: Execute a normal Minecraft command and get command output.",
         "  Prefer this when vanilla commands can solve the task directly (for example: `gamerule`, `time`, `weather`, `tp`, `effect`, `give`, `clear`, `kill`, `summon`, `setblock`, `fill`, `say`, simple checks).",
         "  If command output is enough, do not use KubeJS.",
+        "- `list_mods`: List installed mods with id, name, version, and known links.",
+        "- `list_commands`: List available root commands, optionally filtered by `mod_id`.",
+        "  Filtered command matching is best-effort based on command names and prefixes.",
+        "- `fetch_mod_docs`: Fetch documentation for an installed mod using Modrinth + wiki links.",
+        "  Use this when you need command usage, config keys, APIs, or behavior details from other mods.",
         "- `apply-instant-server-script`: Execute immediate KubeJS JavaScript on the running server via /_exec_kubejs_internal.",
         "  Use this for instant actions such as checking or editing player inventory, changing nearby blocks, querying entities, and all the one-off server operations. (This is the most commonly used tool.)",
         "Below are tools for managing persistent KubeJS scripts under `kubejs/server_scripts/mineclawd/`. Changes to these scripts persist across reloads and can be used for ongoing behaviors like custom commands, event listeners, and world tick logic.",
@@ -2762,6 +2771,23 @@ public class MineClawd {
                 }
                 result = KubeJsToolExecutor.executeCommand(source, command);
                 break;
+            case TOOL_LIST_MODS:
+                result = ModDocsToolExecutor.listMods();
+                break;
+            case TOOL_LIST_COMMANDS:
+                result = ModDocsToolExecutor.listCommands(source, readRequiredStringArg(args, "mod_id"));
+                break;
+            case TOOL_FETCH_MOD_DOCS:
+                String docsModId = readRequiredStringArg(args, "mod_id");
+                if (docsModId == null || docsModId.isBlank()) {
+                    return "ERROR: Tool call is missing required string `mod_id`.";
+                }
+                String docsQuery = readRequiredStringArg(args, "query");
+                if (docsQuery == null || docsQuery.isBlank()) {
+                    return "ERROR: Tool call is missing required string `query`.";
+                }
+                result = ModDocsToolExecutor.fetchModDocs(docsModId, docsQuery);
+                break;
             case TOOL_LIST_SERVER_SCRIPTS:
                 result = KubeJsToolExecutor.listServerScripts(source);
                 break;
@@ -3319,6 +3345,21 @@ public class MineClawd {
                         commandToolParameters()
                 ),
                 new OpenAITool(
+                        TOOL_LIST_MODS,
+                        "List installed mods with id, name, version, and available links.",
+                        noArgToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_LIST_COMMANDS,
+                        "List available root commands. Optionally filter with mod_id (best-effort by command name/prefix).",
+                        listCommandsToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_FETCH_MOD_DOCS,
+                        "Fetch mod documentation by resolving Modrinth project/wiki links, then returning relevant content.",
+                        fetchModDocsToolParameters()
+                ),
+                new OpenAITool(
                         TOOL_LIST_SERVER_SCRIPTS,
                         "List files inside kubejs/server_scripts/mineclawd/.",
                         noArgToolParameters()
@@ -3427,6 +3468,21 @@ public class MineClawd {
                         TOOL_EXECUTE_COMMAND,
                         "Execute a Minecraft command and return command output/result.",
                         commandToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_LIST_MODS,
+                        "List installed mods with id, name, version, and available links.",
+                        noArgToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_LIST_COMMANDS,
+                        "List available root commands. Optionally filter with mod_id (best-effort by command name/prefix).",
+                        listCommandsToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_FETCH_MOD_DOCS,
+                        "Fetch mod documentation by resolving Modrinth project/wiki links, then returning relevant content.",
+                        fetchModDocsToolParameters()
                 ),
                 new VertexAIFunction(
                         TOOL_LIST_SERVER_SCRIPTS,
@@ -3553,6 +3609,31 @@ public class MineClawd {
         command.addProperty("description", "Minecraft command to run, with or without leading slash.");
         properties.add("command", command);
         return objectToolParameters(properties, "command");
+    }
+
+    private JsonObject listCommandsToolParameters() {
+        JsonObject properties = new JsonObject();
+        JsonObject modId = new JsonObject();
+        modId.addProperty("type", "string");
+        modId.addProperty("description", "Optional installed mod id filter, for example `kubejs`.");
+        properties.add("mod_id", modId);
+        return objectToolParameters(properties);
+    }
+
+    private JsonObject fetchModDocsToolParameters() {
+        JsonObject properties = new JsonObject();
+
+        JsonObject modId = new JsonObject();
+        modId.addProperty("type", "string");
+        modId.addProperty("description", "Installed mod id to resolve docs for, for example `kubejs`.");
+        properties.add("mod_id", modId);
+
+        JsonObject query = new JsonObject();
+        query.addProperty("type", "string");
+        query.addProperty("description", "What documentation topic to fetch, for example `commands`, `events`, or `config`.");
+        properties.add("query", query);
+
+        return objectToolParameters(properties, "mod_id", "query");
     }
 
     private JsonObject questionToolParameters() {
