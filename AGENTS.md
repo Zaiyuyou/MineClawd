@@ -2,7 +2,7 @@ This is a Minecraft Architectury Mod, which supports NeoForge 1.21.1, Forge/Fabr
 
 Always respond in English, regardless of the language used in the question.
 
-There're two branches in this repository, 1.21.1 and 1.20.1. When developing new features, implement them in the 1.21.1 branch first. I'll let you know when to backport to 1.20.1 after the feature is tested on 1.21.1
+There're two branches in this repository, 1.21.1 and 1.20.1.
 
 This mod should be required on servers, but optional on clients. When adding new features, ensure they are implemented in a way that degrades gracefully for clients without the mod. When client is not running the mod, they should still be able to connect to the server and play without major issues. For example, degrade GUI interfaces to chat-based interactions, like using clickable chat messages instead of custom buttons, commands instead of GUI, etc.
 
