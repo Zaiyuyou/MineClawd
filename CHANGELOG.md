@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.0] - 2026-02-25
+
+### Added
+
+- Added a docs-first reference toolkit for mod integration work using `list_commands`, `fetch_modrinth`, and `fetch_url`, so MineClawd can verify command usage and mod docs before writing scripts.
+- Added web search support via Tavily (`search` tool), with configurable `tavily-api-key`, so MineClawd can verify external information before acting.
+- Added optional dependency behavior for YACL and KubeJS integrations so MineClawd can still run when these mods are not installed; config GUI opens when YACL is present, while non-GUI workflows remain available.
+- Added inline `Other` answer input in the overlay question block, so players can provide custom clarification answers directly in the overlay.
+
+### Fixed
+
+- Fixed cross-version input passthrough in overlay/question interactions where key, mouse, or scroll input could leak into underlying screens (such as chat or inventory search).
+
 ## [1.4.0] - 2026-02-20
 
 ### Assistant Overlay GUI
