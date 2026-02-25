@@ -78,6 +78,7 @@ import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URI;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -119,9 +120,9 @@ public class MineClawd {
     private static final String TOOL_ASK_USER = "ask-user-question";
     private static final String TOOL_EXECUTE_COMMAND = "execute-command";
     private static final String TOOL_SEARCH = "search";
-    private static final String TOOL_LIST_MODS = "list_mods";
     private static final String TOOL_LIST_COMMANDS = "list_commands";
-    private static final String TOOL_FETCH_MOD_DOCS = "fetch_mod_docs";
+    private static final String TOOL_FETCH_MODRINTH = "fetch_modrinth";
+    private static final String TOOL_FETCH_URL = "fetch_url";
     private static final String TOOL_LIST_SERVER_SCRIPTS = "list-server-scripts";
     private static final String TOOL_READ_SERVER_SCRIPT = "read-server-script";
     private static final String TOOL_WRITE_SERVER_SCRIPT = "write-server-script";
@@ -208,17 +209,17 @@ public class MineClawd {
         "- `execute-command`: Execute a normal Minecraft command and get command output.",
         "  Prefer this when vanilla commands can solve the task directly (for example: `gamerule`, `time`, `weather`, `tp`, `effect`, `give`, `clear`, `kill`, `summon`, `setblock`, `fill`, `say`, simple checks).",
         "  If command output is enough, do not use KubeJS.",
-        "- `list_mods`: List installed mods with id, name, version, and known links.",
         "- `list_commands`: List available root commands, optionally filtered by `mod_id`.",
         "  Filtered command matching is best-effort based on command names and prefixes.",
-        "- `fetch_mod_docs`: Fetch documentation for an installed mod using Modrinth + wiki links.",
-        "  Use this when you need command usage, config keys, APIs, or behavior details from other mods.",
+        "- `fetch_modrinth`: Fetch the Modrinth project page content for an installed mod id.",
+        "- `fetch_url`: Fetch any HTTP(S) page/content by URL. HTML responses are converted to Markdown.",
+        "  Use these tools when you need command usage, config keys, APIs, or behavior details from other mods.",
         "- `search`: Search the web via Tavily and return concise source snippets (available only when configured).",
         "  Use this when external references are needed beyond installed-mod docs.",
         "- `apply-instant-server-script`: Execute immediate KubeJS JavaScript on the running server via /_exec_kubejs_internal.",
         "  Use this for instant actions such as checking or editing player inventory, changing nearby blocks, querying entities, and all the one-off server operations. (This is the most commonly used tool.)",
         "When details are uncertain (for example exact KubeJS syntax, other-mod command usage, or config keys), do not guess.",
-        "First verify by using `fetch_mod_docs` (Modrinth/wiki fetch) and `search` when available.",
+        "First verify by using `fetch_modrinth` / `fetch_url` and `search` when available.",
         "Below are tools for managing persistent KubeJS scripts under `kubejs/server_scripts/mineclawd/`. Changes to these scripts persist across reloads and can be used for ongoing behaviors like custom commands, event listeners, and world tick logic.",
         "- `list-server-scripts`: List files under `kubejs/server_scripts/mineclawd/`.",
         "- `read-server-script`: Read a file under `kubejs/server_scripts/mineclawd/`.",
@@ -2801,22 +2802,22 @@ public class MineClawd {
                 }
                 result = SearchToolExecutor.searchWeb(config.tavilyApiKey, query, readOptionalIntArg(args, "max_results"));
                 break;
-            case TOOL_LIST_MODS:
-                result = ModDocsToolExecutor.listMods();
-                break;
             case TOOL_LIST_COMMANDS:
-                result = ModDocsToolExecutor.listCommands(source, readRequiredStringArg(args, "mod_id"));
+                result = ModDocsToolExecutor.listCommands(source, readOptionalStringArg(args, "mod_id"));
                 break;
-            case TOOL_FETCH_MOD_DOCS:
-                String docsModId = readRequiredStringArg(args, "mod_id");
-                if (docsModId == null || docsModId.isBlank()) {
+            case TOOL_FETCH_MODRINTH:
+                String modrinthModId = readRequiredStringArg(args, "mod_id");
+                if (modrinthModId == null || modrinthModId.isBlank()) {
                     return "ERROR: Tool call is missing required string `mod_id`.";
                 }
-                String docsQuery = readRequiredStringArg(args, "query");
-                if (docsQuery == null || docsQuery.isBlank()) {
-                    return "ERROR: Tool call is missing required string `query`.";
+                result = ModDocsToolExecutor.fetchModrinth(modrinthModId);
+                break;
+            case TOOL_FETCH_URL:
+                String docsUrl = readRequiredStringArg(args, "url");
+                if (docsUrl == null || docsUrl.isBlank()) {
+                    return "ERROR: Tool call is missing required string `url`.";
                 }
-                result = ModDocsToolExecutor.fetchModDocs(docsModId, docsQuery);
+                result = ModDocsToolExecutor.fetchUrl(docsUrl);
                 break;
             case TOOL_LIST_SERVER_SCRIPTS:
                 result = KubeJsToolExecutor.listServerScripts(source);
@@ -3403,19 +3404,19 @@ public class MineClawd {
                         commandToolParameters()
                 ),
                 new OpenAITool(
-                        TOOL_LIST_MODS,
-                        "List installed mods with id, name, version, and available links.",
-                        noArgToolParameters()
-                ),
-                new OpenAITool(
                         TOOL_LIST_COMMANDS,
                         "List available root commands. Optionally filter with mod_id (best-effort by command name/prefix).",
                         listCommandsToolParameters()
                 ),
                 new OpenAITool(
-                        TOOL_FETCH_MOD_DOCS,
-                        "Fetch mod documentation by resolving Modrinth project/wiki links, then returning relevant content.",
-                        fetchModDocsToolParameters()
+                        TOOL_FETCH_MODRINTH,
+                        "Fetch the Modrinth project page content for an installed mod id.",
+                        fetchModrinthToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_FETCH_URL,
+                        "Fetch any HTTP(S) URL and return readable content. HTML is converted to Markdown.",
+                        fetchUrlToolParameters()
                 ),
                 new OpenAITool(
                         TOOL_LIST_SERVER_SCRIPTS,
@@ -3535,19 +3536,19 @@ public class MineClawd {
                         commandToolParameters()
                 ),
                 new VertexAIFunction(
-                        TOOL_LIST_MODS,
-                        "List installed mods with id, name, version, and available links.",
-                        noArgToolParameters()
-                ),
-                new VertexAIFunction(
                         TOOL_LIST_COMMANDS,
                         "List available root commands. Optionally filter with mod_id (best-effort by command name/prefix).",
                         listCommandsToolParameters()
                 ),
                 new VertexAIFunction(
-                        TOOL_FETCH_MOD_DOCS,
-                        "Fetch mod documentation by resolving Modrinth project/wiki links, then returning relevant content.",
-                        fetchModDocsToolParameters()
+                        TOOL_FETCH_MODRINTH,
+                        "Fetch the Modrinth project page content for an installed mod id.",
+                        fetchModrinthToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_FETCH_URL,
+                        "Fetch any HTTP(S) URL and return readable content. HTML is converted to Markdown.",
+                        fetchUrlToolParameters()
                 ),
                 new VertexAIFunction(
                         TOOL_LIST_SERVER_SCRIPTS,
@@ -3692,20 +3693,26 @@ public class MineClawd {
         return objectToolParameters(properties);
     }
 
-    private JsonObject fetchModDocsToolParameters() {
+    private JsonObject fetchModrinthToolParameters() {
         JsonObject properties = new JsonObject();
 
         JsonObject modId = new JsonObject();
         modId.addProperty("type", "string");
-        modId.addProperty("description", "Installed mod id to resolve docs for, for example `kubejs`.");
+        modId.addProperty("description", "Installed mod id to resolve a Modrinth page for, for example `kubejs`.");
         properties.add("mod_id", modId);
 
-        JsonObject query = new JsonObject();
-        query.addProperty("type", "string");
-        query.addProperty("description", "What documentation topic to fetch, for example `commands`, `events`, or `config`.");
-        properties.add("query", query);
+        return objectToolParameters(properties, "mod_id");
+    }
 
-        return objectToolParameters(properties, "mod_id", "query");
+    private JsonObject fetchUrlToolParameters() {
+        JsonObject properties = new JsonObject();
+
+        JsonObject url = new JsonObject();
+        url.addProperty("type", "string");
+        url.addProperty("description", "HTTP(S) URL to fetch. HTML will be converted to Markdown.");
+        properties.add("url", url);
+
+        return objectToolParameters(properties, "url");
     }
 
     private JsonObject searchToolParameters() {
@@ -4454,17 +4461,21 @@ public class MineClawd {
                 shortText = "Applying instant script";
                 hoverText = "Executing KubeJS instant script (code hidden).";
             }
-            case TOOL_LIST_MODS -> shortText = "Listing installed mods";
             case TOOL_LIST_COMMANDS -> {
                 String modId = readOptionalStringArg(args, "mod_id");
                 shortText = modId.isBlank() ? "Listing commands" : "Listing commands for " + modId;
                 hoverText = modId.isBlank() ? "Listing server root commands." : "Filter mod_id: " + modId;
             }
-            case TOOL_FETCH_MOD_DOCS -> {
+            case TOOL_FETCH_URL -> {
+                String rawUrl = readOptionalStringArg(args, "url");
+                String host = extractUrlHost(rawUrl);
+                shortText = host.isBlank() ? "Fetching URL" : "Fetching " + host;
+                hoverText = rawUrl.isBlank() ? "Fetching URL content." : "URL: " + rawUrl.trim();
+            }
+            case TOOL_FETCH_MODRINTH -> {
                 String modId = readOptionalStringArg(args, "mod_id");
-                String query = readOptionalStringArg(args, "query");
-                shortText = modId.isBlank() ? "Fetching mod docs" : "Fetching docs for " + modId;
-                hoverText = query.isBlank() ? ("mod_id: " + modId) : ("mod_id: " + modId + " | query: " + query);
+                shortText = modId.isBlank() ? "Fetching Modrinth page" : "Fetching Modrinth page for " + modId;
+                hoverText = modId.isBlank() ? "Fetching Modrinth project page." : "Modrinth mod_id: " + modId;
             }
             case TOOL_SEARCH -> {
                 String query = readOptionalStringArg(args, "query");
@@ -4538,17 +4549,21 @@ public class MineClawd {
                 shortText = "Applied instant script";
                 hoverText = "Executed KubeJS instant script (code hidden).";
             }
-            case TOOL_LIST_MODS -> shortText = "Listed installed mods";
             case TOOL_LIST_COMMANDS -> {
                 String modId = readOptionalStringArg(args, "mod_id");
                 shortText = modId.isBlank() ? "Listed commands" : "Listed commands for " + modId;
                 hoverText = modId.isBlank() ? "Listed server root commands." : "Filter mod_id: " + modId;
             }
-            case TOOL_FETCH_MOD_DOCS -> {
+            case TOOL_FETCH_URL -> {
+                String rawUrl = readOptionalStringArg(args, "url");
+                String host = extractUrlHost(rawUrl);
+                shortText = host.isBlank() ? "Fetched URL" : "Fetched " + host;
+                hoverText = rawUrl.isBlank() ? "Fetched URL content." : "URL: " + rawUrl.trim();
+            }
+            case TOOL_FETCH_MODRINTH -> {
                 String modId = readOptionalStringArg(args, "mod_id");
-                String query = readOptionalStringArg(args, "query");
-                shortText = modId.isBlank() ? "Fetched mod docs" : "Fetched docs for " + modId;
-                hoverText = query.isBlank() ? ("mod_id: " + modId) : ("mod_id: " + modId + " | query: " + query);
+                shortText = modId.isBlank() ? "Fetched Modrinth page" : "Fetched Modrinth page for " + modId;
+                hoverText = modId.isBlank() ? "Fetched Modrinth project page." : "Modrinth mod_id: " + modId;
             }
             case TOOL_SEARCH -> {
                 String query = readOptionalStringArg(args, "query");
@@ -4643,6 +4658,26 @@ public class MineClawd {
             normalized = "/" + normalized;
         }
         return normalizeStatusText(normalized, 700);
+    }
+
+    private String extractUrlHost(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            return "";
+        }
+        try {
+            URI uri = URI.create(rawUrl.trim());
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                return "";
+            }
+            String lower = host.toLowerCase(Locale.ROOT);
+            if (lower.startsWith("www.")) {
+                lower = lower.substring(4);
+            }
+            return lower;
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private String normalizeStatusText(String text, int maxChars) {

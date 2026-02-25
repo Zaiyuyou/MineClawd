@@ -167,6 +167,65 @@ public final class ModDocsToolExecutor {
         return new ToolExecutionResult(true, trimToMax(out.toString().trim(), MAX_OUTPUT_CHARS));
     }
 
+    public static ToolExecutionResult fetchModrinth(String modId) {
+        String normalizedModId = safe(modId).trim().toLowerCase(Locale.ROOT);
+        if (blank(normalizedModId)) {
+            return new ToolExecutionResult(false, "Missing required mod_id.");
+        }
+
+        Mod installedMod = Platform.getOptionalMod(normalizedModId).orElse(null);
+        Map<String, String> contactLinks = readFabricContactLinks(installedMod);
+        ModrinthProject project = resolveModrinthProject(normalizedModId, installedMod, contactLinks);
+        if (project == null) {
+            return new ToolExecutionResult(
+                    false,
+                    "Mod `" + normalizedModId + "` was not found on Modrinth. Retry with the exact installed mod id."
+            );
+        }
+
+        String formatted = formatModrinthHomepage(project, "overview");
+        if (blank(formatted)) {
+            formatted = "No Modrinth project content was returned.";
+        }
+        return new ToolExecutionResult(true, trimToMax(formatted.trim(), MAX_OUTPUT_CHARS));
+    }
+
+    public static ToolExecutionResult fetchUrl(String url) {
+        String normalizedUrl = safe(url).trim();
+        if (blank(normalizedUrl)) {
+            return new ToolExecutionResult(false, "Missing required url.");
+        }
+        if (!looksHttpUrl(normalizedUrl)) {
+            return new ToolExecutionResult(false, "URL must start with http:// or https://.");
+        }
+
+        HttpResult response = httpGet(
+                normalizedUrl,
+                Map.of("Accept", "text/html, text/plain, application/json, application/xml;q=0.9, */*;q=0.8")
+        );
+        if (!response.success()) {
+            String message = blank(response.error()) ? "HTTP " + response.statusCode() : response.error();
+            return new ToolExecutionResult(false, "Failed to fetch URL: " + message);
+        }
+
+        String body = safe(response.body());
+        if (blank(body)) {
+            return new ToolExecutionResult(false, "Fetched URL but got empty response body.");
+        }
+
+        String content = looksLikeHtml(body) ? extractTextFromHtml(body) : normalizeTextBlock(body);
+        if (blank(content)) {
+            content = normalizeTextBlock(body);
+        }
+        if (blank(content)) {
+            return new ToolExecutionResult(false, "Fetched URL but could not extract readable content.");
+        }
+
+        String sourceUrl = blank(response.finalUrl()) ? normalizedUrl : response.finalUrl();
+        String output = "Source: " + sourceUrl + "\n\n" + content;
+        return new ToolExecutionResult(true, trimToMax(output.trim(), MAX_OUTPUT_CHARS));
+    }
+
     public static ToolExecutionResult fetchModDocs(String modId, String query) {
         String normalizedModId = safe(modId).trim().toLowerCase(Locale.ROOT);
         String normalizedQuery = blank(query) ? "overview" : query.trim();
@@ -181,7 +240,7 @@ public final class ModDocsToolExecutor {
             return new ToolExecutionResult(
                     false,
                     "Mod `" + normalizedModId + "` was not found on Modrinth. " +
-                            "Use `list_mods` to confirm the installed id, then retry."
+                            "Use the exact installed mod id and retry."
             );
         }
 
@@ -1016,6 +1075,19 @@ public final class ModDocsToolExecutor {
             return "";
         }
         return normalizeTextBlock(stripHtmlTags(matcher.group(1)));
+    }
+
+    private static boolean looksLikeHtml(String text) {
+        if (blank(text)) {
+            return false;
+        }
+        String lower = text.trim().toLowerCase(Locale.ROOT);
+        return lower.startsWith("<!doctype html")
+                || lower.contains("<html")
+                || lower.contains("<body")
+                || lower.contains("<head")
+                || lower.contains("</p>")
+                || lower.contains("</div>");
     }
 
     private static String extractTextFromHtml(String html) {
