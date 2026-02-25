@@ -66,6 +66,7 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.ClickEvent;
+import net.minecraft.text.HoverEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.RawFilteredPair;
 import net.minecraft.text.Style;
@@ -156,6 +157,7 @@ public class MineClawd {
     private static final int AGENT_STREAM_REQUEST_ID_MAX_CHARS = 64;
     private static final int AGENT_STREAM_PACKET_MAX_CHARS = 32_767;
     private static final int AGENT_STREAM_CHUNK_CHARS = 3_000;
+    private static final int TOOL_STATUS_CHAT_MAX_CHARS = 180;
     private static final int FAILED_REQUEST_TOKEN_LENGTH = 8;
     private static final long FAILED_REQUEST_TTL_MS = TimeUnit.MINUTES.toMillis(30);
     private static final String HISTORY_BOOK_TITLE = "MineClawd History";
@@ -2638,6 +2640,8 @@ public class MineClawd {
 
         JsonObject args = parseToolArguments(call.arguments());
         int callIndex = index + 1;
+        ToolStatusDescriptor statusDescriptor = announceToolCallProgress(source, runtime, call.name(), args);
+        ToolStatusDescriptor completionDescriptor = buildToolStatusCompletedDescriptor(call.name(), args);
         debugLog(runtime, "Executing tool (OpenAI) #%d name=%s args=%s", callIndex, call.name(), args);
         return executeToolCallAsync(source, call.name(), args, runtime)
                 .handle((output, throwable) -> {
@@ -2647,6 +2651,7 @@ public class MineClawd {
                     } else if (finalOutput == null || finalOutput.isBlank()) {
                         finalOutput = "ERROR: Tool returned empty output.";
                     }
+                    clearToolCallProgress(source, runtime, completionDescriptor == null ? statusDescriptor : completionDescriptor);
                     debugLog(runtime, "Tool output #%d: %s", callIndex, finalOutput);
                     String toolCallId = call.id();
                     if (toolCallId == null || toolCallId.isBlank()) {
@@ -2714,6 +2719,8 @@ public class MineClawd {
 
         JsonObject args = call.args() == null ? new JsonObject() : call.args();
         int callIndex = index + 1;
+        ToolStatusDescriptor statusDescriptor = announceToolCallProgress(source, runtime, call.name(), args);
+        ToolStatusDescriptor completionDescriptor = buildToolStatusCompletedDescriptor(call.name(), args);
         debugLog(runtime, "Executing tool (Vertex) #%d name=%s args=%s", callIndex, call.name(), args);
         return executeToolCallAsync(source, call.name(), args, runtime)
                 .handle((output, throwable) -> {
@@ -2723,6 +2730,7 @@ public class MineClawd {
                     } else if (finalOutput == null || finalOutput.isBlank()) {
                         finalOutput = "ERROR: Tool returned empty output.";
                     }
+                    clearToolCallProgress(source, runtime, completionDescriptor == null ? statusDescriptor : completionDescriptor);
                     debugLog(runtime, "Tool output #%d: %s", callIndex, finalOutput);
                     JsonObject response = new JsonObject();
                     response.addProperty("result", finalOutput);
@@ -4360,6 +4368,294 @@ public class MineClawd {
         return MINEDOWN_ACTION_COLON_PATTERN.matcher(markdown).replaceAll("($1=");
     }
 
+    private ToolStatusDescriptor announceToolCallProgress(
+            ServerCommandSource source,
+            AgentRuntime runtime,
+            String toolName,
+            JsonObject args
+    ) {
+        if (source == null || runtime == null || isRuntimeInactive(runtime)) {
+            return null;
+        }
+        ToolStatusDescriptor descriptor = buildToolStatusDescriptor(toolName, args);
+        if (descriptor == null || descriptor.shortText() == null || descriptor.shortText().isBlank()) {
+            return null;
+        }
+        if (runtime.clientStreamEnabled()) {
+            sendAgentStreamEvent(source, runtime, AgentStreamEventType.TOOL_STATUS, buildToolStatusPayload(descriptor));
+            return descriptor;
+        }
+        sendToolStatusChatLine(source, descriptor);
+        return descriptor;
+    }
+
+    private void clearToolCallProgress(ServerCommandSource source, AgentRuntime runtime) {
+        clearToolCallProgress(source, runtime, null);
+    }
+
+    private void clearToolCallProgress(
+            ServerCommandSource source,
+            AgentRuntime runtime,
+            ToolStatusDescriptor completionDescriptor
+    ) {
+        if (source == null || runtime == null || isRuntimeInactive(runtime)) {
+            return;
+        }
+        if (runtime.clientStreamEnabled()) {
+            String payload = completionDescriptor == null ? "" : buildToolStatusPayload(completionDescriptor);
+            sendAgentStreamEvent(source, runtime, AgentStreamEventType.TOOL_STATUS_CLEAR, payload);
+            return;
+        }
+        if (completionDescriptor != null && completionDescriptor.shortText() != null && !completionDescriptor.shortText().isBlank()) {
+            sendToolStatusChatLine(source, completionDescriptor);
+        }
+    }
+
+    private String buildToolStatusPayload(ToolStatusDescriptor descriptor) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("short", descriptor == null ? "" : normalizeStatusText(descriptor.shortText(), 220));
+        payload.addProperty("hover", descriptor == null ? "" : normalizeStatusText(descriptor.hoverText(), 700));
+        return payload.toString();
+    }
+
+    private void sendToolStatusChatLine(ServerCommandSource source, ToolStatusDescriptor descriptor) {
+        if (source == null || descriptor == null || descriptor.shortText() == null || descriptor.shortText().isBlank()) {
+            return;
+        }
+        String shortText = normalizeStatusText(descriptor.shortText(), TOOL_STATUS_CHAT_MAX_CHARS);
+        if (shortText.isBlank()) {
+            return;
+        }
+        MutableText line = Text.literal(shortText).formatted(Formatting.GRAY);
+        String hover = normalizeStatusText(descriptor.hoverText(), 700);
+        if (!hover.isBlank()) {
+            line.setStyle(line.getStyle().withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
+        }
+
+        if (source.getEntity() instanceof ServerPlayerEntity player) {
+            player.sendMessage(line, false);
+            return;
+        }
+        source.sendFeedback(() -> line, false);
+    }
+
+    private ToolStatusDescriptor buildToolStatusDescriptor(String toolName, JsonObject args) {
+        String normalizedName = toolName == null ? "" : toolName.trim();
+        String shortText;
+        String hoverText = "";
+
+        switch (normalizedName) {
+            case TOOL_EXECUTE_COMMAND -> {
+                String command = readOptionalStringArg(args, "command");
+                shortText = "Executing command " + summarizeCommandForStatus(command);
+                hoverText = command.isBlank() ? "" : "Command: " + normalizeCommandForHover(command);
+            }
+            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, LEGACY_TOOL_KUBEJS_EVAL -> {
+                shortText = "Applying instant script";
+                hoverText = "Executing KubeJS instant script (code hidden).";
+            }
+            case TOOL_LIST_MODS -> shortText = "Listing installed mods";
+            case TOOL_LIST_COMMANDS -> {
+                String modId = readOptionalStringArg(args, "mod_id");
+                shortText = modId.isBlank() ? "Listing commands" : "Listing commands for " + modId;
+                hoverText = modId.isBlank() ? "Listing server root commands." : "Filter mod_id: " + modId;
+            }
+            case TOOL_FETCH_MOD_DOCS -> {
+                String modId = readOptionalStringArg(args, "mod_id");
+                String query = readOptionalStringArg(args, "query");
+                shortText = modId.isBlank() ? "Fetching mod docs" : "Fetching docs for " + modId;
+                hoverText = query.isBlank() ? ("mod_id: " + modId) : ("mod_id: " + modId + " | query: " + query);
+            }
+            case TOOL_SEARCH -> {
+                String query = readOptionalStringArg(args, "query");
+                shortText = "Searching the web";
+                hoverText = query.isBlank() ? "Web search query unavailable." : "Query: " + query;
+            }
+            case TOOL_LIST_SERVER_SCRIPTS -> {
+                shortText = "Listing server scripts";
+                hoverText = "Listing files under kubejs/server_scripts/mineclawd/.";
+            }
+            case TOOL_READ_SERVER_SCRIPT -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Reading server script" : "Reading script " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "" : "Path: " + path;
+            }
+            case TOOL_WRITE_SERVER_SCRIPT -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Writing server script" : "Writing script " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Writing a server script file." : "Path: " + path;
+            }
+            case TOOL_DELETE_SERVER_SCRIPT -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Deleting server script" : "Deleting script " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Deleting a server script file." : "Path: " + path;
+            }
+            case TOOL_RELOAD_GAME -> {
+                shortText = "Reloading game scripts";
+                hoverText = "Running /reload and checking KubeJS loading errors.";
+            }
+            case TOOL_SYNC_COMMAND_TREE -> {
+                shortText = "Syncing command tree";
+                hoverText = "Refreshing command suggestions for online players.";
+            }
+            case TOOL_ASK_USER -> {
+                shortText = "Asking a clarification question";
+                hoverText = readOptionalStringArg(args, "question");
+            }
+            case TOOL_LIST_DYNAMIC_CONTENT -> shortText = "Inspecting dynamic content slots";
+            case TOOL_REGISTER_DYNAMIC_ITEM, TOOL_REGISTER_DYNAMIC_BLOCK, TOOL_REGISTER_DYNAMIC_FLUID ->
+                    shortText = "Registering dynamic content";
+            case TOOL_UPDATE_DYNAMIC_ITEM, TOOL_UPDATE_DYNAMIC_BLOCK, TOOL_UPDATE_DYNAMIC_FLUID ->
+                    shortText = "Updating dynamic content";
+            case TOOL_UNREGISTER_DYNAMIC_CONTENT -> shortText = "Unregistering dynamic content";
+            case TOOL_LIST_ASSETS -> shortText = "Listing tracked assets";
+            case TOOL_UPSERT_ASSET_RECORD -> shortText = "Updating tracked asset";
+            case TOOL_REMOVE_ASSET_RECORD -> shortText = "Removing tracked asset";
+            default -> {
+                shortText = "Running task step";
+                hoverText = normalizedName.isBlank() ? "" : "Tool: " + normalizedName;
+            }
+        }
+
+        return new ToolStatusDescriptor(
+                normalizeStatusText(shortText, 220),
+                normalizeStatusText(hoverText, 700)
+        );
+    }
+
+    private ToolStatusDescriptor buildToolStatusCompletedDescriptor(String toolName, JsonObject args) {
+        String normalizedName = toolName == null ? "" : toolName.trim();
+        String shortText;
+        String hoverText = "";
+
+        switch (normalizedName) {
+            case TOOL_EXECUTE_COMMAND -> {
+                String command = readOptionalStringArg(args, "command");
+                shortText = "Executed command " + summarizeCommandForStatus(command);
+                hoverText = command.isBlank() ? "" : "Command: " + normalizeCommandForHover(command);
+            }
+            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, LEGACY_TOOL_KUBEJS_EVAL -> {
+                shortText = "Applied instant script";
+                hoverText = "Executed KubeJS instant script (code hidden).";
+            }
+            case TOOL_LIST_MODS -> shortText = "Listed installed mods";
+            case TOOL_LIST_COMMANDS -> {
+                String modId = readOptionalStringArg(args, "mod_id");
+                shortText = modId.isBlank() ? "Listed commands" : "Listed commands for " + modId;
+                hoverText = modId.isBlank() ? "Listed server root commands." : "Filter mod_id: " + modId;
+            }
+            case TOOL_FETCH_MOD_DOCS -> {
+                String modId = readOptionalStringArg(args, "mod_id");
+                String query = readOptionalStringArg(args, "query");
+                shortText = modId.isBlank() ? "Fetched mod docs" : "Fetched docs for " + modId;
+                hoverText = query.isBlank() ? ("mod_id: " + modId) : ("mod_id: " + modId + " | query: " + query);
+            }
+            case TOOL_SEARCH -> {
+                String query = readOptionalStringArg(args, "query");
+                shortText = "Completed web search";
+                hoverText = query.isBlank() ? "Web search query unavailable." : "Query: " + query;
+            }
+            case TOOL_LIST_SERVER_SCRIPTS -> {
+                shortText = "Listed server scripts";
+                hoverText = "Listed files under kubejs/server_scripts/mineclawd/.";
+            }
+            case TOOL_READ_SERVER_SCRIPT -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Read server script" : "Read script " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "" : "Path: " + path;
+            }
+            case TOOL_WRITE_SERVER_SCRIPT -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Wrote server script" : "Wrote script " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Wrote a server script file." : "Path: " + path;
+            }
+            case TOOL_DELETE_SERVER_SCRIPT -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Deleted server script" : "Deleted script " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Deleted a server script file." : "Path: " + path;
+            }
+            case TOOL_RELOAD_GAME -> {
+                shortText = "Reloaded game scripts";
+                hoverText = "Ran /reload and checked KubeJS loading errors.";
+            }
+            case TOOL_SYNC_COMMAND_TREE -> {
+                shortText = "Synced command tree";
+                hoverText = "Refreshed command suggestions for online players.";
+            }
+            case TOOL_ASK_USER -> {
+                shortText = "Asked a clarification question";
+                hoverText = readOptionalStringArg(args, "question");
+            }
+            case TOOL_LIST_DYNAMIC_CONTENT -> shortText = "Inspected dynamic content slots";
+            case TOOL_REGISTER_DYNAMIC_ITEM, TOOL_REGISTER_DYNAMIC_BLOCK, TOOL_REGISTER_DYNAMIC_FLUID ->
+                    shortText = "Registered dynamic content";
+            case TOOL_UPDATE_DYNAMIC_ITEM, TOOL_UPDATE_DYNAMIC_BLOCK, TOOL_UPDATE_DYNAMIC_FLUID ->
+                    shortText = "Updated dynamic content";
+            case TOOL_UNREGISTER_DYNAMIC_CONTENT -> shortText = "Unregistered dynamic content";
+            case TOOL_LIST_ASSETS -> shortText = "Listed tracked assets";
+            case TOOL_UPSERT_ASSET_RECORD -> shortText = "Updated tracked asset";
+            case TOOL_REMOVE_ASSET_RECORD -> shortText = "Removed tracked asset";
+            default -> {
+                shortText = "Completed task step";
+                hoverText = normalizedName.isBlank() ? "" : "Tool: " + normalizedName;
+            }
+        }
+
+        return new ToolStatusDescriptor(
+                normalizeStatusText(shortText, 220),
+                normalizeStatusText(hoverText, 700)
+        );
+    }
+
+    private String summarizePathTail(String path) {
+        String normalized = path == null ? "" : path.trim().replace('\\', '/');
+        if (normalized.isBlank()) {
+            return "file";
+        }
+        int slash = normalized.lastIndexOf('/');
+        if (slash >= 0 && slash + 1 < normalized.length()) {
+            return normalized.substring(slash + 1);
+        }
+        return normalized;
+    }
+
+    private String summarizeCommandForStatus(String command) {
+        String normalized = command == null ? "" : command.trim();
+        if (normalized.isBlank()) {
+            return "command";
+        }
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        int space = normalized.indexOf(' ');
+        if (space > 0) {
+            return normalized.substring(0, space);
+        }
+        return normalized;
+    }
+
+    private String normalizeCommandForHover(String command) {
+        String normalized = command == null ? "" : command.trim();
+        if (normalized.isBlank()) {
+            return "";
+        }
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        return normalizeStatusText(normalized, 700);
+    }
+
+    private String normalizeStatusText(String text, int maxChars) {
+        String normalized = text == null ? "" : text.replace('\r', ' ').replace('\n', ' ').trim();
+        while (normalized.contains("  ")) {
+            normalized = normalized.replace("  ", " ");
+        }
+        if (maxChars > 0 && normalized.length() > maxChars) {
+            return normalized.substring(0, maxChars).trim() + "...";
+        }
+        return normalized;
+    }
+
     private void debugLog(AgentRuntime runtime, String format, Object... args) {
         if (runtime == null || !runtime.debug()) {
             return;
@@ -5097,6 +5393,9 @@ public class MineClawd {
         var payload = new RegistryByteBuf(Unpooled.buffer(), registryLookup);
         payload.writeString(payloadString, HISTORY_PACKET_MAX_CHARS);
         NetworkManager.sendToPlayer(player, MineClawdNetworking.OPEN_HISTORY_BOOK, payload);
+    }
+
+    private record ToolStatusDescriptor(String shortText, String hoverText) {
     }
 
     private record RequestOptions(
