@@ -71,6 +71,7 @@ public final class AgentResponseOverlay {
     private static final long TOOL_STATUS_ANIM_STEP_MS = 95L;
     private static final long TOOL_STATUS_ANIM_PAUSE_MS = 1000L;
     private static final long TOOL_STATUS_MIN_VISIBLE_MS = 900L;
+    private static final long THINKING_MIN_VISIBLE_MS = 900L;
     private static final int TOOL_STATUS_WINDOW_CHARS = 4;
     private static final int TOOL_STATUS_TOOLTIP_MAX_WIDTH = 260;
     private static final int ORB_ICON_OFFSET_X = 1;
@@ -149,6 +150,7 @@ public final class AgentResponseOverlay {
     private static double scrollY = 0.0;
     private static boolean followTail = true;
     private static long thinkingAnimStartEpochMs = 0L;
+    private static long thinkingMinVisibleUntilEpochMs = 0L;
     private static long toolStatusShownEpochMs = 0L;
     private static long toolStatusPendingClearEpochMs = 0L;
 
@@ -243,8 +245,10 @@ public final class AgentResponseOverlay {
                 content.append(markUserLines(prompt)).append("\n\n");
             }
             activeRequestId = normalizedId;
+            long now = System.currentTimeMillis();
             awaitingFirstAssistantDelta = true;
-            thinkingAnimStartEpochMs = 0L;
+            thinkingAnimStartEpochMs = now;
+            thinkingMinVisibleUntilEpochMs = now + THINKING_MIN_VISIBLE_MS;
             parsedDirty = true;
             wrappedDirty = true;
             wrappedWidth = -1;
@@ -314,6 +318,7 @@ public final class AgentResponseOverlay {
 
         if (eventType == AgentStreamEventType.ERROR) {
             awaitingFirstAssistantDelta = false;
+            thinkingMinVisibleUntilEpochMs = 0L;
             appendText(text);
             clearToolStatusState();
             generating = false;
@@ -322,6 +327,7 @@ public final class AgentResponseOverlay {
 
         if (eventType == AgentStreamEventType.DONE) {
             awaitingFirstAssistantDelta = false;
+            thinkingMinVisibleUntilEpochMs = 0L;
             clearToolStatusState();
             generating = false;
         }
@@ -365,6 +371,7 @@ public final class AgentResponseOverlay {
         applyHistory(payload.history());
         activeRequestId = "";
         awaitingFirstAssistantDelta = false;
+        thinkingMinVisibleUntilEpochMs = 0L;
         clearToolStatusState();
         generating = false;
         followTail = true;
@@ -397,6 +404,7 @@ public final class AgentResponseOverlay {
         activePersona = payload.activePersona() == null ? "" : payload.activePersona().trim();
         activeSessionId = payload.activeSessionId() == null ? "" : payload.activeSessionId().trim();
         awaitingFirstAssistantDelta = false;
+        thinkingMinVisibleUntilEpochMs = 0L;
         clearToolStatusState();
         assetsScrollY = 0.0;
         assetRows.clear();
@@ -1607,13 +1615,38 @@ public final class AgentResponseOverlay {
             return;
         }
         String selected = options.get(optionIndex);
-        appendQuestionAnswerToHistory(buildQuestionAnswerSummary("Selected option " + (optionIndex + 1) + ": " + selected));
+        if (isBuiltInOtherQuestionOption(selected)) {
+            appendQuestionAnswerToHistory(buildQuestionAnswerSummary("Selected Other option. Waiting for custom chat input."));
+        } else {
+            appendQuestionAnswerToHistory(buildQuestionAnswerSummary("Selected option " + (optionIndex + 1) + ": " + selected));
+        }
         submitQuestion(client, new QuestionResponsePayload(
                 pendingQuestion.questionId(),
                 QuestionResponsePayload.Type.OPTION,
                 optionIndex,
                 selected
         ));
+    }
+
+    private static boolean isBuiltInOtherQuestionOption(String option) {
+        if (option == null || option.isBlank()) {
+            return false;
+        }
+        String normalized = option.toLowerCase(Locale.ROOT)
+                .replace('_', ' ')
+                .replace('-', ' ')
+                .replace("(", " ")
+                .replace(")", " ")
+                .replace(".", " ")
+                .replace(",", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
+        return "other".equals(normalized)
+                || "other option".equals(normalized)
+                || "custom".equals(normalized)
+                || "custom text".equals(normalized)
+                || "\u5176\u4ed6".equals(normalized)
+                || "\u5176\u5b83".equals(normalized);
     }
 
     private static String buildQuestionAnswerSummary(String answerLine) {
@@ -1699,7 +1732,13 @@ public final class AgentResponseOverlay {
     }
 
     private static boolean shouldShowThinkingPlaceholder() {
-        return generating && awaitingFirstAssistantDelta;
+        if (!generating) {
+            return false;
+        }
+        if (awaitingFirstAssistantDelta) {
+            return true;
+        }
+        return System.currentTimeMillis() < thinkingMinVisibleUntilEpochMs;
     }
 
     private static int thinkingPlaceholderHeight(TextRenderer renderer) {
@@ -1927,6 +1966,7 @@ public final class AgentResponseOverlay {
     private static void applyHistory(List<SessionOverlayPayload.HistoryItem> history) {
         clearResponseContent();
         awaitingFirstAssistantDelta = false;
+        thinkingMinVisibleUntilEpochMs = 0L;
         if (history == null || history.isEmpty()) {
             return;
         }
@@ -1958,6 +1998,7 @@ public final class AgentResponseOverlay {
         followTail = true;
         awaitingFirstAssistantDelta = false;
         thinkingAnimStartEpochMs = 0L;
+        thinkingMinVisibleUntilEpochMs = 0L;
     }
 
     private static void rebuildWrappedLines(TextRenderer renderer, int maxWidth, MinecraftClient client) {
@@ -2366,6 +2407,7 @@ public final class AgentResponseOverlay {
         orbDragging = false;
         activeRequestId = "";
         awaitingFirstAssistantDelta = false;
+        thinkingMinVisibleUntilEpochMs = 0L;
         questionButtons.clear();
         sessionRows.clear();
         sessionItems.clear();
@@ -3279,6 +3321,7 @@ public final class AgentResponseOverlay {
         clearToolStatusState();
         generating = false;
         awaitingFirstAssistantDelta = false;
+        thinkingMinVisibleUntilEpochMs = 0L;
         activeRequestId = "";
     }
 
