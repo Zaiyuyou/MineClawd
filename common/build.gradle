@@ -16,7 +16,7 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${rootProject.fabric_loader_version}"
     modApi "dev.architectury:architectury:${rootProject.architectury_api_version}"
 
-    modCompileOnly "dev.isxander:yet-another-config-lib:${rootProject.yacl_neoforge_version}"
+    modCompileOnly "dev.isxander:yet-another-config-lib:${rootProject.yacl_fabric_version}"
     modCompileOnly "dev.latvian.mods:kubejs-neoforge:${rootProject.kubejs_neoforge_version}"
     modCompileOnly "dev.latvian.mods:rhino:${rootProject.rhino_neoforge_version}"
 

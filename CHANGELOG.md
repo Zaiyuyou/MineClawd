@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.1] - 2026-02-26
+
+### Added
+
+- Added an in-overlay `Retry` button for modded clients after LLM request failures, so you can retry directly without manually typing `/mineclawd retry <token>`.
+
+### Fixed
+
+- Fixed client mod detection failing on dedicated servers, causing all GUI features to fall back to chat-text mode for clients that have the mod installed.
+- Fixed dedicated-server packet sync crashes (`CustomPacketPayload$Type` null) that broke GUI sync and showed `unexpected error` when opening config.
+- Fixed config GUI behavior on dedicated servers so it now loads and edits server config values; client-only settings (such as `Enable GUI`) remain local.
+- Fixed resumed-session continuity so requests now use the session history provider when needed, preventing "memory lost" after selecting a session in the overlay.
+- Fixed `apply-instant-server-script` payload decoding on dedicated servers, including KubeJS class-filter compatibility during UTF-8 decoding.
+- Added always-on server-side logging for agent conversations, tool calls, and tool results (previously all logging was gated behind debug mode).
+
 ## [1.5.0] - 2026-02-25
 
 ### Added

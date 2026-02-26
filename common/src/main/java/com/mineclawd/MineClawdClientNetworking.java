@@ -22,6 +22,7 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.BookScreen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.text.TextColor;
@@ -62,9 +63,14 @@ public final class MineClawdClientNetworking {
                     if (buf.isReadable()) {
                         broadcastTarget = buf.readString(64);
                     }
+                    String serverConfigPayload = "";
+                    if (buf.isReadable()) {
+                        serverConfigPayload = buf.readString(32767);
+                    }
                     String finalBroadcastTarget = broadcastTarget;
+                    String finalServerConfigPayload = serverConfigPayload;
                     MinecraftClient client = MinecraftClient.getInstance();
-                    client.execute(() -> openConfigScreen(client, finalBroadcastTarget));
+                    client.execute(() -> openConfigScreen(client, finalBroadcastTarget, finalServerConfigPayload));
                 });
 
         NetworkManager.registerReceiver(NetworkManager.s2c(), MineClawdNetworking.SYNC_BROADCAST_TARGET,
@@ -229,7 +235,7 @@ public final class MineClawdClientNetworking {
         }
     }
 
-    private static void openConfigScreen(MinecraftClient client, String broadcastTarget) {
+    private static void openConfigScreen(MinecraftClient client, String broadcastTarget, String serverConfigPayload) {
         if (!isGuiEnabled()) {
             return;
         }
@@ -240,6 +246,7 @@ public final class MineClawdClientNetworking {
             return;
         }
         syncBroadcastTargetFromServer(broadcastTarget);
+        syncServerConfigFromServer(serverConfigPayload);
         try {
             Class<?> cls = Class.forName("com.mineclawd.config.MineClawdConfigScreen");
             Method create = cls.getMethod("create", Screen.class, String.class);
@@ -263,29 +270,22 @@ public final class MineClawdClientNetworking {
         try {
             Class<?> cls = Class.forName("com.mineclawd.config.MineClawdConfigScreen");
             cls.getMethod("clearBroadcastTargetServerSync").invoke(null);
+            cls.getMethod("clearServerConfigSync").invoke(null);
+        } catch (ReflectiveOperationException ignored) {
+        }
+    }
+
+    private static void syncServerConfigFromServer(String payload) {
+        if (!HAS_YACL) return;
+        try {
+            Class<?> cls = Class.forName("com.mineclawd.config.MineClawdConfigScreen");
+            cls.getMethod("syncServerConfigFromServer", String.class).invoke(null, payload == null ? "" : payload);
         } catch (ReflectiveOperationException ignored) {
         }
     }
 
     private static void sendClientReadyPing() {
-        try {
-            for (Method method : NetworkManager.class.getMethods()) {
-                if (!"sendToServer".equals(method.getName())
-                        || !Modifier.isStatic(method.getModifiers())
-                        || method.getParameterCount() != 2
-                        || method.getParameterTypes()[0] != net.minecraft.util.Identifier.class) {
-                    continue;
-                }
-                Object payload = createClientReadyBuffer(method.getParameterTypes()[1]);
-                if (payload == null) {
-                    continue;
-                }
-                writeGuiPreference(payload);
-                method.invoke(null, MineClawdNetworking.CLIENT_READY, payload);
-                return;
-            }
-        } catch (Exception ignored) {
-        }
+        sendClientPreferencePacket(MineClawdNetworking.CLIENT_READY);
     }
 
     public static void sendClientGuiPreferenceSync() {
@@ -296,23 +296,37 @@ public final class MineClawdClientNetworking {
         if (channel == null) {
             return;
         }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getNetworkHandler() == null) {
+            return;
+        }
         try {
-            for (Method method : NetworkManager.class.getMethods()) {
-                if (!"sendToServer".equals(method.getName())
-                        || !Modifier.isStatic(method.getModifiers())
-                        || method.getParameterCount() != 2
-                        || method.getParameterTypes()[0] != net.minecraft.util.Identifier.class) {
-                    continue;
+            RegistryByteBuf buf = new RegistryByteBuf(
+                    Unpooled.buffer(),
+                    client.getNetworkHandler().getRegistryManager()
+            );
+            buf.writeBoolean(isGuiEnabled());
+            NetworkManager.sendToServer(channel, buf);
+        } catch (Exception e) {
+            // Fallback: try reflection-based approach for older versions
+            try {
+                for (Method method : NetworkManager.class.getMethods()) {
+                    if (!"sendToServer".equals(method.getName())
+                            || !Modifier.isStatic(method.getModifiers())
+                            || method.getParameterCount() != 2
+                            || method.getParameterTypes()[0] != net.minecraft.util.Identifier.class) {
+                        continue;
+                    }
+                    Object payload = createClientReadyBuffer(method.getParameterTypes()[1]);
+                    if (payload == null) {
+                        continue;
+                    }
+                    writeGuiPreference(payload);
+                    method.invoke(null, channel, payload);
+                    return;
                 }
-                Object payload = createClientReadyBuffer(method.getParameterTypes()[1]);
-                if (payload == null) {
-                    continue;
-                }
-                writeGuiPreference(payload);
-                method.invoke(null, channel, payload);
-                return;
+            } catch (Exception ignored) {
             }
-        } catch (Exception ignored) {
         }
     }
 
