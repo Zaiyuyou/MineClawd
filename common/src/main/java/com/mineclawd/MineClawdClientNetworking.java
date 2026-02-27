@@ -9,6 +9,7 @@ import com.mineclawd.client.AgentResponseOverlay;
 import com.mineclawd.config.MineClawdConfig;
 import com.mineclawd.dynamic.DynamicContentRegistry;
 import com.mineclawd.question.QuestionPromptPayload;
+import com.mineclawd.session.SessionAttachment;
 import com.mineclawd.session.SessionOverlayPayload;
 import dev.architectury.event.EventResult;
 import dev.architectury.event.events.client.ClientGuiEvent;
@@ -34,12 +35,22 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public final class MineClawdClientNetworking {
     private static final int HISTORY_PACKET_MAX_CHARS = 262_144;
+    private static final int MAX_PROMPT_CHARS = 32767;
+    private static final int MAX_ATTACHMENT_COUNT = 12;
+    private static final int MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+    private static final int UPLOAD_CHUNK_BYTES = 128 * 1024;
+    private static final int UPLOAD_ID_MAX_CHARS = 64;
+    private static final int MAX_UPLOAD_NAME_CHARS = 120;
     private static final boolean HAS_YACL = hasClass("dev.isxander.yacl3.api.YetAnotherConfigLib");
     private static boolean initialized = false;
 
@@ -290,6 +301,226 @@ public final class MineClawdClientNetworking {
 
     public static void sendClientGuiPreferenceSync() {
         sendClientPreferencePacket(MineClawdNetworking.CLIENT_GUI_PREF);
+    }
+
+    public static boolean sendPromptWithAttachments(MinecraftClient client, String request, List<Path> localFiles) {
+        if (client == null || client.getNetworkHandler() == null) {
+            return false;
+        }
+        String normalizedRequest = request == null ? "" : request.trim();
+        if (normalizedRequest.isBlank()) {
+            return false;
+        }
+        if (normalizedRequest.length() > MAX_PROMPT_CHARS) {
+            normalizedRequest = normalizedRequest.substring(0, MAX_PROMPT_CHARS).trim();
+        }
+
+        List<Path> candidates = localFiles == null ? List.of() : localFiles;
+        List<SessionAttachment> uploaded = new ArrayList<>();
+        Set<String> usedWorkspaceNames = new HashSet<>();
+
+        int processed = 0;
+        for (Path localPath : candidates) {
+            if (localPath == null) {
+                continue;
+            }
+            if (processed >= MAX_ATTACHMENT_COUNT) {
+                sendClientNotice(client, "Attachment limit reached (" + MAX_ATTACHMENT_COUNT + "). Extra files were skipped.");
+                break;
+            }
+            Path normalized = localPath.toAbsolutePath().normalize();
+            if (!Files.isRegularFile(normalized)) {
+                continue;
+            }
+
+            byte[] bytes;
+            try {
+                long size = Files.size(normalized);
+                if (size > MAX_UPLOAD_BYTES) {
+                    sendClientNotice(client, "Skipped `" + normalized.getFileName() + "` because it exceeds " + MAX_UPLOAD_BYTES + " bytes.");
+                    continue;
+                }
+                bytes = Files.readAllBytes(normalized);
+            } catch (Exception exception) {
+                sendClientNotice(client, "Failed to read `" + normalized.getFileName() + "`: " + exception.getMessage());
+                continue;
+            }
+
+            String originalName = normalized.getFileName() == null ? "file" : normalized.getFileName().toString();
+            String workspacePath = uniqueWorkspacePath(originalName, usedWorkspaceNames, uploaded.size());
+            boolean image = isImageFileName(originalName);
+            if (!sendWorkspaceUploadPacket(client, workspacePath, originalName, image, bytes)) {
+                sendClientNotice(client, "Failed to upload `" + originalName + "`.");
+                continue;
+            }
+
+            uploaded.add(new SessionAttachment(workspacePath, originalName, image));
+            usedWorkspaceNames.add(workspacePath.toLowerCase(Locale.ROOT));
+            processed++;
+        }
+
+        return sendPromptPacket(client, normalizedRequest, uploaded);
+    }
+
+    private static boolean sendWorkspaceUploadPacket(
+            MinecraftClient client,
+            String workspacePath,
+            String originalName,
+            boolean image,
+            byte[] bytes
+    ) {
+        if (client == null || client.getNetworkHandler() == null) {
+            return false;
+        }
+        byte[] payload = bytes == null ? new byte[0] : bytes;
+        if (payload.length == 0 || payload.length > MAX_UPLOAD_BYTES) {
+            return false;
+        }
+        int totalChunks = (payload.length + UPLOAD_CHUNK_BYTES - 1) / UPLOAD_CHUNK_BYTES;
+        String uploadId = buildUploadId(workspacePath, originalName, payload.length);
+        for (int chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+            int start = chunkIndex * UPLOAD_CHUNK_BYTES;
+            int end = Math.min(payload.length, start + UPLOAD_CHUNK_BYTES);
+            int length = end - start;
+            if (length <= 0) {
+                return false;
+            }
+            byte[] chunk = new byte[length];
+            System.arraycopy(payload, start, chunk, 0, length);
+            if (!sendWorkspaceUploadChunkPacket(client, uploadId, workspacePath, originalName, image, chunkIndex, totalChunks, chunk)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean sendWorkspaceUploadChunkPacket(
+            MinecraftClient client,
+            String uploadId,
+            String workspacePath,
+            String originalName,
+            boolean image,
+            int chunkIndex,
+            int totalChunks,
+            byte[] chunk
+    ) {
+        if (client == null || client.getNetworkHandler() == null) {
+            return false;
+        }
+        try {
+            RegistryByteBuf buf = new RegistryByteBuf(
+                    Unpooled.buffer(),
+                    client.getNetworkHandler().getRegistryManager()
+            );
+            buf.writeString(uploadId == null ? "" : uploadId, UPLOAD_ID_MAX_CHARS);
+            buf.writeString(workspacePath == null ? "" : workspacePath, 512);
+            buf.writeString(originalName == null ? "" : originalName, 256);
+            buf.writeBoolean(image);
+            buf.writeInt(chunkIndex);
+            buf.writeInt(totalChunks);
+            buf.writeByteArray(chunk == null ? new byte[0] : chunk);
+            NetworkManager.sendToServer(MineClawdNetworking.UPLOAD_WORKSPACE_FILE_CHUNK, buf);
+            return true;
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
+    private static String buildUploadId(String workspacePath, String originalName, int byteLength) {
+        String pathPart = workspacePath == null ? "file" : workspacePath;
+        String namePart = originalName == null ? "" : originalName;
+        long hash = Integer.toUnsignedLong((pathPart + "\n" + namePart).hashCode());
+        String base = Long.toUnsignedString(System.nanoTime(), 36)
+                + "-"
+                + Integer.toString(Math.max(0, byteLength), 36)
+                + "-"
+                + Long.toString(hash, 36);
+        if (base.length() > UPLOAD_ID_MAX_CHARS) {
+            return base.substring(0, UPLOAD_ID_MAX_CHARS);
+        }
+        return base;
+    }
+
+    private static boolean sendPromptPacket(MinecraftClient client, String request, List<SessionAttachment> attachments) {
+        if (client == null || client.getNetworkHandler() == null) {
+            return false;
+        }
+        try {
+            RegistryByteBuf buf = new RegistryByteBuf(
+                    Unpooled.buffer(),
+                    client.getNetworkHandler().getRegistryManager()
+            );
+            buf.writeString(request == null ? "" : request, MAX_PROMPT_CHARS);
+            String payload = SessionAttachment.toJsonArray(attachments);
+            buf.writeString(payload, MAX_PROMPT_CHARS);
+            NetworkManager.sendToServer(MineClawdNetworking.SUBMIT_PROMPT, buf);
+            return true;
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
+    private static String uniqueWorkspacePath(String originalName, Set<String> used, int index) {
+        String safeName = sanitizeFileName(originalName);
+        String stamp = Long.toString(System.currentTimeMillis(), 36);
+        String base = "upload-" + stamp + "-" + (index + 1) + "-" + safeName;
+        String candidate = base;
+        int suffix = 1;
+        while (used.contains(candidate.toLowerCase(Locale.ROOT))) {
+            candidate = base + "-" + suffix;
+            suffix++;
+        }
+        return candidate;
+    }
+
+    private static String sanitizeFileName(String name) {
+        String input = name == null ? "file" : name.trim();
+        if (input.isBlank()) {
+            input = "file";
+        }
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if ((c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9')
+                    || c == '.'
+                    || c == '_'
+                    || c == '-') {
+                out.append(c);
+            } else {
+                out.append('_');
+            }
+        }
+        String sanitized = out.toString();
+        while (sanitized.startsWith(".")) {
+            sanitized = sanitized.substring(1);
+        }
+        if (sanitized.isBlank()) {
+            sanitized = "file";
+        }
+        if (sanitized.length() > MAX_UPLOAD_NAME_CHARS) {
+            sanitized = sanitized.substring(0, MAX_UPLOAD_NAME_CHARS);
+        }
+        return sanitized;
+    }
+
+    private static boolean isImageFileName(String name) {
+        String lower = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".png")
+                || lower.endsWith(".jpg")
+                || lower.endsWith(".jpeg")
+                || lower.endsWith(".gif")
+                || lower.endsWith(".webp")
+                || lower.endsWith(".bmp")
+                || lower.endsWith(".tga");
+    }
+
+    private static void sendClientNotice(MinecraftClient client, String message) {
+        if (client == null || client.player == null || message == null || message.isBlank()) {
+            return;
+        }
+        client.player.sendMessage(Text.literal("[MineClawd] " + message), false);
     }
 
     private static void sendClientPreferencePacket(net.minecraft.util.Identifier channel) {

@@ -74,7 +74,15 @@ public class OpenAIClient {
                 }
                 JsonObject msg = new JsonObject();
                 msg.addProperty("role", message.role());
-                if (message.content() != null) {
+                if (message.contentParts() != null && !message.contentParts().isEmpty()) {
+                    JsonArray parts = new JsonArray();
+                    for (JsonObject part : message.contentParts()) {
+                        if (part != null) {
+                            parts.add(part.deepCopy());
+                        }
+                    }
+                    msg.add("content", parts);
+                } else if (message.content() != null) {
                     msg.addProperty("content", message.content());
                 } else {
                     msg.add("content", JsonNull.INSTANCE);

@@ -20,6 +20,9 @@ public final class MineClawdNetworking {
     public static final Identifier OPEN_ASSETS = Identifier.of(MineClawd.MOD_ID, "open_assets");
     public static final Identifier OPEN_HISTORY_BOOK = Identifier.of(MineClawd.MOD_ID, "open_history_book");
     public static final Identifier AGENT_STREAM_EVENT = Identifier.of(MineClawd.MOD_ID, "agent_stream_event");
+    public static final Identifier UPLOAD_WORKSPACE_FILE = Identifier.of(MineClawd.MOD_ID, "upload_workspace_file");
+    public static final Identifier UPLOAD_WORKSPACE_FILE_CHUNK = Identifier.of(MineClawd.MOD_ID, "upload_workspace_file_chunk");
+    public static final Identifier SUBMIT_PROMPT = Identifier.of(MineClawd.MOD_ID, "submit_prompt");
     private static final List<Identifier> SERVER_TO_CLIENT_CHANNELS = List.of(
             OPEN_CONFIG,
             SYNC_BROADCAST_TARGET,

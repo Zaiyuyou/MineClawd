@@ -22,7 +22,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -31,7 +30,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -61,51 +59,6 @@ public final class ModDocsToolExecutor {
     private static final Pattern NUMERIC_ENTITY_PATTERN = Pattern.compile("&#(x?[0-9a-fA-F]+);");
 
     private ModDocsToolExecutor() {
-    }
-
-    public static ToolExecutionResult listMods() {
-        Collection<Mod> allMods = Platform.getMods();
-        if (allMods == null || allMods.isEmpty()) {
-            return new ToolExecutionResult(true, "No loaded mods found.");
-        }
-
-        Map<String, Mod> byId = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        for (Mod mod : allMods) {
-            if (mod == null || blank(mod.getModId())) {
-                continue;
-            }
-            byId.putIfAbsent(mod.getModId(), mod);
-        }
-
-        if (byId.isEmpty()) {
-            return new ToolExecutionResult(true, "No loaded mods found.");
-        }
-
-        StringBuilder out = new StringBuilder();
-        out.append("Loaded mods (").append(byId.size()).append("):\n");
-        for (Mod mod : byId.values()) {
-            if (mod == null) {
-                continue;
-            }
-            String id = safe(mod.getModId());
-            String name = safe(mod.getName());
-            String version = safe(mod.getVersion());
-
-            out.append("- ").append(id);
-            if (!blank(name) && !name.equalsIgnoreCase(id)) {
-                out.append(" (").append(name).append(")");
-            }
-            if (!blank(version)) {
-                out.append(" v").append(version);
-            }
-            out.append("\n");
-
-            appendMetaLine(out, "homepage", mod.getHomepage().orElse(""));
-            appendMetaLine(out, "sources", mod.getSources().orElse(""));
-            appendMetaLine(out, "issues", mod.getIssueTracker().orElse(""));
-        }
-
-        return new ToolExecutionResult(true, trimToMax(out.toString().trim(), MAX_OUTPUT_CHARS));
     }
 
     public static ToolExecutionResult listCommands(ServerCommandSource source, String modIdFilter) {
@@ -1245,13 +1198,6 @@ public final class ModDocsToolExecutor {
         }
         String lower = value.trim().toLowerCase(Locale.ROOT);
         return lower.startsWith("http://") || lower.startsWith("https://");
-    }
-
-    private static void appendMetaLine(StringBuilder builder, String key, String value) {
-        if (builder == null || blank(key) || blank(value)) {
-            return;
-        }
-        builder.append("  ").append(key).append(": ").append(value.trim()).append("\n");
     }
 
     private static String stringValue(JsonObject object, String key) {

@@ -2,6 +2,7 @@ package com.mineclawd;
 
 import de.themoep.minedown.adventure.MineDown;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mineclawd.assets.AssetsManager;
@@ -13,6 +14,7 @@ import com.mineclawd.assets.AssetsOverlayPayload;
 import com.mineclawd.config.MineClawdConfig;
 import com.mineclawd.dynamic.DynamicContentRegistry;
 import com.mineclawd.dynamic.DynamicContentToolExecutor;
+import com.mineclawd.files.WorkspaceFileToolExecutor;
 import com.mineclawd.kubejs.KubeJsScriptManager;
 import com.mineclawd.kubejs.KubeJsToolExecutor;
 import com.mineclawd.kubejs.KubeJsToolExecutor.ToolExecutionResult;
@@ -34,6 +36,7 @@ import com.mineclawd.player.PlayerSettingsManager.RequestBroadcastTarget;
 import com.mineclawd.question.QuestionPromptPayload;
 import com.mineclawd.question.QuestionResponsePayload;
 import com.mineclawd.session.SessionManager;
+import com.mineclawd.session.SessionAttachment;
 import com.mineclawd.session.SessionManager.SessionData;
 import com.mineclawd.session.SessionManager.SessionSummary;
 import com.mineclawd.session.SessionOverlayPayload;
@@ -48,6 +51,7 @@ import dev.architectury.event.events.common.CommandRegistrationEvent;
 import dev.architectury.event.events.common.LifecycleEvent;
 import dev.architectury.event.events.common.PlayerEvent;
 import dev.architectury.networking.NetworkManager;
+import dev.architectury.platform.Mod;
 import dev.architectury.platform.Platform;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
@@ -78,16 +82,22 @@ import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CompletableFuture;
@@ -113,6 +123,7 @@ public class MineClawd {
     private static final ConcurrentHashMap<String, PendingQuestion> PENDING_QUESTIONS_BY_ID = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, PendingQuestion> PENDING_QUESTIONS_BY_PLAYER = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, PendingQuestion> PENDING_OTHER_TEXT_INPUT = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<UUID, ConcurrentHashMap<String, UploadAssembly>> PENDING_UPLOAD_ASSEMBLIES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Boolean> CLIENT_MOD_READY = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Boolean> CLIENT_GUI_ENABLED = new ConcurrentHashMap<>();
 
@@ -123,10 +134,14 @@ public class MineClawd {
     private static final String TOOL_LIST_COMMANDS = "list_commands";
     private static final String TOOL_FETCH_MODRINTH = "fetch_modrinth";
     private static final String TOOL_FETCH_URL = "fetch_url";
-    private static final String TOOL_LIST_SERVER_SCRIPTS = "list-server-scripts";
-    private static final String TOOL_READ_SERVER_SCRIPT = "read-server-script";
-    private static final String TOOL_WRITE_SERVER_SCRIPT = "write-server-script";
-    private static final String TOOL_DELETE_SERVER_SCRIPT = "delete-server-script";
+    private static final String TOOL_LIST_FILES = "list-files";
+    private static final String TOOL_READ_FILES = "read-files";
+    private static final String TOOL_WRITE_FILES = "write-files";
+    private static final String TOOL_COPY_FILES = "copy-files";
+    private static final String TOOL_MOVE_FILES = "move-files";
+    private static final String TOOL_GREP = "grep";
+    private static final String TOOL_CURL = "curl";
+    private static final String TOOL_READ_IMAGE = "read-image";
     private static final String TOOL_RELOAD_GAME = "reload-game";
     private static final String TOOL_SYNC_COMMAND_TREE = "sync-command-tree";
     private static final String TOOL_LIST_DYNAMIC_CONTENT = "list-dynamic-content";
@@ -162,6 +177,15 @@ public class MineClawd {
     private static final int AGENT_STREAM_REQUEST_ID_MAX_CHARS = 64;
     private static final int AGENT_STREAM_PACKET_MAX_CHARS = 32_767;
     private static final int AGENT_STREAM_CHUNK_CHARS = 3_000;
+    private static final int PROMPT_PACKET_MAX_CHARS = 32_767;
+    private static final int UPLOAD_PACKET_ID_MAX_CHARS = 64;
+    private static final int UPLOAD_PACKET_PATH_MAX_CHARS = 512;
+    private static final int UPLOAD_PACKET_NAME_MAX_CHARS = 256;
+    private static final int MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+    private static final int UPLOAD_CHUNK_MAX_BYTES = 128 * 1024;
+    private static final int MAX_UPLOAD_CHUNKS = (MAX_UPLOAD_BYTES + UPLOAD_CHUNK_MAX_BYTES - 1) / UPLOAD_CHUNK_MAX_BYTES;
+    private static final long UPLOAD_ASSEMBLY_TTL_MS = TimeUnit.MINUTES.toMillis(3);
+    private static final int MAX_PROMPT_ATTACHMENTS = 12;
     private static final int TOOL_STATUS_CHAT_MAX_CHARS = 180;
     private static final int FAILED_REQUEST_TOKEN_LENGTH = 8;
     private static final long FAILED_REQUEST_TTL_MS = TimeUnit.MINUTES.toMillis(30);
@@ -224,11 +248,17 @@ public class MineClawd {
         "  Use this for instant actions such as checking or editing player inventory, changing nearby blocks, querying entities, and all the one-off server operations. (This is the most commonly used tool.)",
         "When details are uncertain (for example exact KubeJS syntax, other-mod command usage, or config keys), do not guess.",
         "First verify by using `fetch_modrinth` / `fetch_url` and `search` when available.",
-        "Below are tools for managing persistent KubeJS scripts under `kubejs/server_scripts/mineclawd/`. Changes to these scripts persist across reloads and can be used for ongoing behaviors like custom commands, event listeners, and world tick logic.",
-        "- `list-server-scripts`: List files under `kubejs/server_scripts/mineclawd/`.",
-        "- `read-server-script`: Read a file under `kubejs/server_scripts/mineclawd/`.",
-        "- `write-server-script`: Create or overwrite a file under `kubejs/server_scripts/mineclawd/`.",
-        "- `delete-server-script`: Delete a file under `kubejs/server_scripts/mineclawd/`.",
+        "File tools work over the full server root (the folder containing `world`, `logs`, `mods`, `config`, `crash-reports`, etc.).",
+        "- `list-files`: List files/directories (optional path + recursion).",
+        "- `read-files`: Read text files.",
+        "- `write-files`: Write text files.",
+        "- `copy-files`: Copy files/directories.",
+        "- `move-files`: Move/rename files/directories.",
+        "- `grep`: Regex search inside files.",
+        "- `curl`: Perform HTTP requests and return response details.",
+        "- `read-image`: Read/describe an image file with the configured vision model.",
+        "All file paths must stay inside server root; parent traversal (`..`) is blocked.",
+        "Use server-root-relative paths in file tools (for example `kubejs/server_scripts/...`), not absolute OS paths.",
         "- `reload-game`: Run `/reload` to apply persistent script changes and return any detected KubeJS loading errors.",
         "- `sync-command-tree`: Push refreshed command suggestions/tab-completion to online players after command registration changes.",
 
@@ -250,7 +280,7 @@ public class MineClawd {
         "Use persistent scripts for tasks like: registering commands, modifying recipes, listening to player behavior, modifying entity drops, and world tick logic.",
         "Do NOT claim you can register new items, blocks, fluids, or other startup content in this session.",
         "Those require `startup_scripts` plus a full game restart to take effect. If asked, refuse and explain this limit clearly.",
-        "If the player asks you to remove a feature you implemented, you may not remember you've implemented it since the player may started a new session. In that case, use the `list-server-scripts` tool to check if any of your scripts are still present, and remove them if needed.",
+        "If the player asks you to remove a feature you implemented, you may not remember you've implemented it since the player may started a new session. In that case, use `list-files` / `grep` under `kubejs/server_scripts/mineclawd/` to find existing scripts and remove them if needed.",
 
         "For multi-line code in `apply-instant-server-script`, include normal newline characters; they will be converted to \\n before execution.",
         "When implementing persistent custom commands or handlers, include robust error handling: validate args, guard nulls, and use try/catch with clear error context.",
@@ -361,6 +391,7 @@ public class MineClawd {
         PlayerEvent.PLAYER_QUIT.register(player -> {
             CLIENT_MOD_READY.remove(player.getUuid());
             CLIENT_GUI_ENABLED.remove(player.getUuid());
+            PENDING_UPLOAD_ASSEMBLIES.remove(player.getUuid());
         });
         NetworkManager.registerReceiver(NetworkManager.c2s(), MineClawdNetworking.CLIENT_READY,
                 (buf, context) -> {
@@ -412,6 +443,82 @@ public class MineClawd {
                     }
                     String payload = buf.readString(32767);
                     server.execute(() -> instance.handleQuestionResponsePacket(player, payload));
+                });
+        NetworkManager.registerReceiver(NetworkManager.c2s(), MineClawdNetworking.UPLOAD_WORKSPACE_FILE,
+                (buf, context) -> {
+                    ServerPlayerEntity player = (ServerPlayerEntity) context.getPlayer();
+                    MinecraftServer server = player.getServer();
+                    if (server == null) {
+                        return;
+                    }
+                    String workspacePath = buf.readString(UPLOAD_PACKET_PATH_MAX_CHARS);
+                    String originalName = buf.readString(UPLOAD_PACKET_NAME_MAX_CHARS);
+                    boolean image = false;
+                    if (buf.isReadable()) {
+                        image = buf.readBoolean();
+                    }
+                    byte[] data;
+                    try {
+                        data = buf.readByteArray(MAX_UPLOAD_BYTES);
+                    } catch (Exception exception) {
+                        data = new byte[0];
+                    }
+                    boolean finalImage = image;
+                    byte[] finalData = data;
+                    server.execute(() -> instance.handleWorkspaceUploadPacket(player, workspacePath, originalName, finalImage, finalData));
+                });
+        NetworkManager.registerReceiver(NetworkManager.c2s(), MineClawdNetworking.UPLOAD_WORKSPACE_FILE_CHUNK,
+                (buf, context) -> {
+                    ServerPlayerEntity player = (ServerPlayerEntity) context.getPlayer();
+                    MinecraftServer server = player.getServer();
+                    if (server == null) {
+                        return;
+                    }
+                    String uploadId = buf.readString(UPLOAD_PACKET_ID_MAX_CHARS);
+                    String workspacePath = buf.readString(UPLOAD_PACKET_PATH_MAX_CHARS);
+                    String originalName = buf.readString(UPLOAD_PACKET_NAME_MAX_CHARS);
+                    boolean image = false;
+                    if (buf.isReadable()) {
+                        image = buf.readBoolean();
+                    }
+                    int chunkIndex = -1;
+                    int totalChunks = -1;
+                    byte[] data = new byte[0];
+                    try {
+                        chunkIndex = buf.readInt();
+                        totalChunks = buf.readInt();
+                        data = buf.readByteArray(UPLOAD_CHUNK_MAX_BYTES);
+                    } catch (Exception ignored) {
+                    }
+                    boolean finalImage = image;
+                    int finalChunkIndex = chunkIndex;
+                    int finalTotalChunks = totalChunks;
+                    byte[] finalData = data;
+                    server.execute(() -> instance.handleWorkspaceUploadChunkPacket(
+                            player,
+                            uploadId,
+                            workspacePath,
+                            originalName,
+                            finalImage,
+                            finalChunkIndex,
+                            finalTotalChunks,
+                            finalData
+                    ));
+                });
+        NetworkManager.registerReceiver(NetworkManager.c2s(), MineClawdNetworking.SUBMIT_PROMPT,
+                (buf, context) -> {
+                    ServerPlayerEntity player = (ServerPlayerEntity) context.getPlayer();
+                    MinecraftServer server = player.getServer();
+                    if (server == null) {
+                        return;
+                    }
+                    String request = buf.readString(PROMPT_PACKET_MAX_CHARS);
+                    String attachmentsJson = "";
+                    if (buf.isReadable()) {
+                        attachmentsJson = buf.readString(PROMPT_PACKET_MAX_CHARS);
+                    }
+                    String finalAttachmentsJson = attachmentsJson;
+                    server.execute(() -> instance.handleSubmitPromptPacket(player, request, finalAttachmentsJson));
                 });
         ChatEvent.RECEIVED.register((sender, message) -> {
             if (instance.handlePendingOtherTextInput(message, sender)) {
@@ -2008,6 +2115,22 @@ public class MineClawd {
             return 0;
         }
         boolean providerSwitchedForSessionContinuity = provider != configuredProvider;
+        PreparedPrompt preparedPrompt;
+        try {
+            preparedPrompt = preparePromptWithAttachments(
+                    source,
+                    ownerKey,
+                    session,
+                    request,
+                    requestOptions.attachments(),
+                    provider
+            );
+        } catch (Exception exception) {
+            ACTIVE_REQUESTS.remove(ownerKey, requestId);
+            source.sendError(Text.literal("MineClawd: failed to prepare prompt attachments: " + summarizeThrowable(exception)));
+            return 0;
+        }
+        String promptForModel = preparedPrompt.text();
 
         AgentRuntime runtime = new AgentRuntime(
                 resolveToolLimit(config),
@@ -2017,7 +2140,8 @@ public class MineClawd {
                 requestId,
                 ownerKey,
                 sessionId,
-                request,
+                provider,
+                promptForModel,
                 requestOptions.sessionBacked(),
                 requestOptions.interactiveErrorActions(),
                 source.getEntity() instanceof ServerPlayerEntity requester
@@ -2041,19 +2165,27 @@ public class MineClawd {
             sendAgentStreamEvent(source, runtime, AgentStreamEventType.START, buildStreamStartPayload(runtime.sessionId(), request));
         }
         try {
-            String systemPrompt = buildSystemPrompt(config, ownerKey, runtime.dynamicRegistryEnabled(), session);
+            String systemPrompt = buildSystemPrompt(source, config, ownerKey, runtime.dynamicRegistryEnabled(), session);
             if (provider == MineClawdConfig.LlmProvider.OPENAI) {
                 List<OpenAIMessage> history;
                 if (runtime.sessionBacked() && session != null) {
                     history = session.openAiHistory();
                     ensureOpenAiHistory(history, systemPrompt);
-                    history.add(OpenAIMessage.user(request));
+                    if (preparedPrompt.openAiParts().isEmpty()) {
+                        history.add(OpenAIMessage.user(promptForModel));
+                    } else {
+                        history.add(OpenAIMessage.userWithParts(promptForModel, preparedPrompt.openAiParts()));
+                    }
                     session.touch();
                     SESSION_MANAGER.saveSession(ownerKey, session);
                 } else {
                     history = new ArrayList<>();
                     ensureOpenAiHistory(history, systemPrompt);
-                    history.add(OpenAIMessage.user(request));
+                    if (preparedPrompt.openAiParts().isEmpty()) {
+                        history.add(OpenAIMessage.user(promptForModel));
+                    } else {
+                        history.add(OpenAIMessage.userWithParts(promptForModel, preparedPrompt.openAiParts()));
+                    }
                 }
                 runOpenAiAgent(source, session, history, 0, 0, new ToolLoopState("", "", 0), runtime);
             } else {
@@ -2062,13 +2194,21 @@ public class MineClawd {
                     history = session.vertexHistory();
                     ensureVertexHistory(history, systemPrompt);
                     normalizeVertexFunctionCallTurns(history, runtime);
-                    history.add(VertexAIMessage.user(request));
+                    if (preparedPrompt.vertexParts().isEmpty()) {
+                        history.add(VertexAIMessage.user(promptForModel));
+                    } else {
+                        history.add(new VertexAIMessage("user", preparedPrompt.vertexParts()));
+                    }
                     session.touch();
                     SESSION_MANAGER.saveSession(ownerKey, session);
                 } else {
                     history = new ArrayList<>();
                     ensureVertexHistory(history, systemPrompt);
-                    history.add(VertexAIMessage.user(request));
+                    if (preparedPrompt.vertexParts().isEmpty()) {
+                        history.add(VertexAIMessage.user(promptForModel));
+                    } else {
+                        history.add(new VertexAIMessage("user", preparedPrompt.vertexParts()));
+                    }
                 }
                 runVertexAgent(source, session, history, 0, 0, new ToolLoopState("", "", 0), runtime);
             }
@@ -2958,17 +3098,22 @@ public class MineClawd {
                 }
                 result = ModDocsToolExecutor.fetchUrl(docsUrl);
                 break;
-            case TOOL_LIST_SERVER_SCRIPTS:
-                result = KubeJsToolExecutor.listServerScripts(source);
+            case TOOL_LIST_FILES:
+                result = WorkspaceFileToolExecutor.listFiles(
+                        source,
+                        readOptionalStringArg(args, "path"),
+                        readOptionalBooleanArg(args, "recursive"),
+                        readOptionalIntArg(args, "limit")
+                );
                 break;
-            case TOOL_READ_SERVER_SCRIPT:
+            case TOOL_READ_FILES:
                 String readPath = readRequiredStringArg(args, "path");
                 if (readPath == null || readPath.isBlank()) {
                     return "ERROR: Tool call is missing required string `path`.";
                 }
-                result = KubeJsToolExecutor.readServerScript(source, readPath);
+                result = WorkspaceFileToolExecutor.readFile(source, readPath);
                 break;
-            case TOOL_WRITE_SERVER_SCRIPT:
+            case TOOL_WRITE_FILES:
                 String writePath = readRequiredStringArg(args, "path");
                 if (writePath == null || writePath.isBlank()) {
                     return "ERROR: Tool call is missing required string `path`.";
@@ -2977,14 +3122,57 @@ public class MineClawd {
                 if (content == null) {
                     return "ERROR: Tool call is missing required string `content`.";
                 }
-                result = KubeJsToolExecutor.writeServerScript(source, writePath, content);
+                result = WorkspaceFileToolExecutor.writeFile(source, writePath, content);
                 break;
-            case TOOL_DELETE_SERVER_SCRIPT:
-                String deletePath = readRequiredStringArg(args, "path");
-                if (deletePath == null || deletePath.isBlank()) {
+            case TOOL_COPY_FILES:
+                String fromPath = readRequiredStringArg(args, "from");
+                String toPath = readRequiredStringArg(args, "to");
+                if (fromPath == null || fromPath.isBlank() || toPath == null || toPath.isBlank()) {
+                    return "ERROR: Tool call requires string `from` and `to`.";
+                }
+                result = WorkspaceFileToolExecutor.copyFiles(source, fromPath, toPath);
+                break;
+            case TOOL_MOVE_FILES:
+                String moveFromPath = readRequiredStringArg(args, "from");
+                String moveToPath = readRequiredStringArg(args, "to");
+                if (moveFromPath == null || moveFromPath.isBlank() || moveToPath == null || moveToPath.isBlank()) {
+                    return "ERROR: Tool call requires string `from` and `to`.";
+                }
+                result = WorkspaceFileToolExecutor.moveFiles(source, moveFromPath, moveToPath);
+                break;
+            case TOOL_GREP:
+                String pattern = readRequiredStringArg(args, "pattern");
+                if (pattern == null || pattern.isBlank()) {
+                    return "ERROR: Tool call is missing required string `pattern`.";
+                }
+                result = WorkspaceFileToolExecutor.grepFiles(
+                        source,
+                        pattern,
+                        readOptionalStringArg(args, "path"),
+                        readOptionalStringArg(args, "glob"),
+                        readOptionalBooleanArg(args, "case_sensitive"),
+                        readOptionalIntArg(args, "max_matches")
+                );
+                break;
+            case TOOL_CURL:
+                String url = readRequiredStringArg(args, "url");
+                if (url == null || url.isBlank()) {
+                    return "ERROR: Tool call is missing required string `url`.";
+                }
+                result = WorkspaceFileToolExecutor.curl(
+                        url,
+                        readOptionalStringArg(args, "method"),
+                        readOptionalStringArg(args, "body"),
+                        readOptionalStringMapArg(args, "headers"),
+                        readOptionalIntArg(args, "timeout_seconds")
+                );
+                break;
+            case TOOL_READ_IMAGE:
+                String imagePath = readRequiredStringArg(args, "path");
+                if (imagePath == null || imagePath.isBlank()) {
                     return "ERROR: Tool call is missing required string `path`.";
                 }
-                result = KubeJsToolExecutor.deleteServerScript(source, deletePath);
+                result = readImageTool(source, runtime, imagePath, readOptionalStringArg(args, "prompt"));
                 break;
             case TOOL_RELOAD_GAME:
                 result = KubeJsToolExecutor.reloadGame(source);
@@ -3143,6 +3331,333 @@ public class MineClawd {
             return "";
         }
         return value.trim();
+    }
+
+    private Map<String, String> readOptionalStringMapArg(JsonObject args, String key) {
+        if (args == null || key == null || key.isBlank() || !args.has(key) || args.get(key).isJsonNull()) {
+            return Map.of();
+        }
+        if (!args.get(key).isJsonObject()) {
+            return Map.of();
+        }
+        JsonObject object = args.getAsJsonObject(key);
+        Map<String, String> map = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
+            if (entry == null || entry.getKey() == null || entry.getValue() == null || entry.getValue().isJsonNull()) {
+                continue;
+            }
+            if (!entry.getValue().isJsonPrimitive()) {
+                continue;
+            }
+            try {
+                map.put(entry.getKey(), entry.getValue().getAsString());
+            } catch (Exception ignored) {
+            }
+        }
+        return map;
+    }
+
+    private ToolExecutionResult readImageTool(ServerCommandSource source, AgentRuntime runtime, String path, String prompt) {
+        Path imagePath = WorkspaceFileToolExecutor.resolveServerPath(source, path, false);
+        Path root = WorkspaceFileToolExecutor.serverRoot(source);
+        if (imagePath == null || root == null) {
+            return new ToolExecutionResult(false, "Invalid path. Paths must stay inside the server root and cannot use `..`.");
+        }
+        if (!Files.exists(imagePath) || !Files.isRegularFile(imagePath)) {
+            return new ToolExecutionResult(false, "Image file not found: " + WorkspaceFileToolExecutor.displayPath(root, imagePath));
+        }
+
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(imagePath);
+        } catch (Exception exception) {
+            return new ToolExecutionResult(false, "Failed to read image: " + summarizeThrowable(exception));
+        }
+        if (bytes.length == 0) {
+            return new ToolExecutionResult(false, "Image file is empty.");
+        }
+        if (bytes.length > MAX_UPLOAD_BYTES) {
+            return new ToolExecutionResult(false, "Image file is too large (max " + MAX_UPLOAD_BYTES + " bytes).");
+        }
+
+        String mimeType = detectImageMimeType(imagePath);
+        if (mimeType == null || !mimeType.startsWith("image/")) {
+            return new ToolExecutionResult(false, "Unsupported image format. Use PNG/JPEG/GIF/WebP/BMP/TGA.");
+        }
+
+        String instruction = prompt == null || prompt.isBlank()
+                ? "Describe this image precisely for Minecraft modding context. Mention key objects, text, coordinates, colors, and any notable details."
+                : prompt.trim();
+        MineClawdConfig config = MineClawdConfig.get();
+        MineClawdConfig.LlmProvider provider = runtime != null && runtime.provider() != null
+                ? runtime.provider()
+                : (config.provider == null ? MineClawdConfig.LlmProvider.OPENAI : config.provider);
+
+        String modelOutput;
+        try {
+            if (provider == MineClawdConfig.LlmProvider.VERTEX_AI) {
+                modelOutput = readImageWithVertex(config, instruction, mimeType, bytes);
+            } else {
+                modelOutput = readImageWithOpenAi(config, instruction, mimeType, bytes);
+            }
+        } catch (Exception exception) {
+            return new ToolExecutionResult(false, "Image analysis failed: " + summarizeThrowable(exception));
+        }
+
+        StringBuilder out = new StringBuilder();
+        out.append("Image: ").append(WorkspaceFileToolExecutor.displayPath(root, imagePath)).append("\n");
+        out.append("Mime-Type: ").append(mimeType).append("\n");
+        out.append("Size: ").append(bytes.length).append(" bytes\n");
+        if (modelOutput == null || modelOutput.isBlank()) {
+            out.append("Analysis: (no text returned by model)");
+        } else {
+            out.append("Analysis:\n").append(modelOutput.trim());
+        }
+        return new ToolExecutionResult(true, out.toString());
+    }
+
+    private String readImageWithOpenAi(MineClawdConfig config, String instruction, String mimeType, byte[] bytes) {
+        if (config == null || config.apiKey == null || config.apiKey.isBlank()) {
+            throw new IllegalStateException("OpenAI API key is missing.");
+        }
+        if (config.model == null || config.model.isBlank()) {
+            throw new IllegalStateException("OpenAI model is missing.");
+        }
+        JsonObject textPart = new JsonObject();
+        textPart.addProperty("type", "text");
+        textPart.addProperty("text", instruction);
+
+        JsonObject imagePart = new JsonObject();
+        imagePart.addProperty("type", "image_url");
+        JsonObject imageUrl = new JsonObject();
+        imageUrl.addProperty("url", "data:" + mimeType + ";base64," + Base64.getEncoder().encodeToString(bytes));
+        imagePart.add("image_url", imageUrl);
+
+        List<OpenAIMessage> messages = List.of(OpenAIMessage.userWithParts(instruction, List.of(textPart, imagePart)));
+        OpenAIResponse response = OPENAI_CLIENT
+                .sendMessage(config.endpoint, config.apiKey, config.model, messages, null)
+                .join();
+        return response == null ? "" : (response.text() == null ? "" : response.text());
+    }
+
+    private String readImageWithVertex(MineClawdConfig config, String instruction, String mimeType, byte[] bytes) {
+        if (config == null || config.vertexApiKey == null || config.vertexApiKey.isBlank()) {
+            throw new IllegalStateException("Vertex API key is missing.");
+        }
+        if (config.vertexModel == null || config.vertexModel.isBlank()) {
+            throw new IllegalStateException("Vertex model is missing.");
+        }
+        JsonObject inlineDataPart = new JsonObject();
+        JsonObject inlineData = new JsonObject();
+        inlineData.addProperty("mimeType", mimeType);
+        inlineData.addProperty("data", Base64.getEncoder().encodeToString(bytes));
+        inlineDataPart.add("inlineData", inlineData);
+
+        List<JsonObject> parts = new ArrayList<>();
+        parts.add(VertexAIMessage.textPart(instruction));
+        parts.add(inlineDataPart);
+        List<VertexAIMessage> history = List.of(new VertexAIMessage("user", parts));
+        VertexAIResponse response = VERTEX_CLIENT
+                .sendMessage(config.vertexEndpoint, config.vertexApiKey, config.vertexModel, history, List.of())
+                .join();
+        return response == null ? "" : (response.text() == null ? "" : response.text());
+    }
+
+    private String detectImageMimeType(Path path) {
+        if (path == null) {
+            return "";
+        }
+        try {
+            String detected = Files.probeContentType(path);
+            if (detected != null && detected.startsWith("image/")) {
+                return detected;
+            }
+        } catch (Exception ignored) {
+        }
+        String name = path.getFileName() == null ? "" : path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".png")) {
+            return "image/png";
+        }
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) {
+            return "image/jpeg";
+        }
+        if (name.endsWith(".gif")) {
+            return "image/gif";
+        }
+        if (name.endsWith(".webp")) {
+            return "image/webp";
+        }
+        if (name.endsWith(".bmp")) {
+            return "image/bmp";
+        }
+        if (name.endsWith(".tga")) {
+            return "image/x-tga";
+        }
+        return "";
+    }
+
+    private PreparedPrompt preparePromptWithAttachments(
+            ServerCommandSource source,
+            String ownerKey,
+            SessionData session,
+            String request,
+            List<SessionAttachment> attachments,
+            MineClawdConfig.LlmProvider provider
+    ) {
+        String baseRequest = request == null ? "" : request.trim();
+        if (attachments == null || attachments.isEmpty() || session == null) {
+            return new PreparedPrompt(baseRequest, List.of(), List.of());
+        }
+
+        Path workspaceRoot = SESSION_MANAGER.ensureSessionWorkspace(ownerKey, session.id());
+        List<SessionAttachment> available = new ArrayList<>();
+        List<Path> availablePaths = new ArrayList<>();
+        for (SessionAttachment attachment : attachments) {
+            if (attachment == null || available.size() >= MAX_PROMPT_ATTACHMENTS) {
+                continue;
+            }
+            String relativePath = sanitizeWorkspaceRelativePath(attachment.workspacePath());
+            if (relativePath.isBlank()) {
+                continue;
+            }
+            Path file = workspaceRoot.resolve(relativePath).normalize();
+            if (!file.startsWith(workspaceRoot) || !Files.isRegularFile(file)) {
+                continue;
+            }
+            available.add(new SessionAttachment(relativePath, attachment.originalName(), attachment.image()));
+            availablePaths.add(file);
+        }
+
+        if (available.isEmpty()) {
+            return new PreparedPrompt(baseRequest, List.of(), List.of());
+        }
+
+        String promptText = buildAttachmentPromptText(source, workspaceRoot, baseRequest, available);
+        List<JsonObject> openAiParts = new ArrayList<>();
+        List<JsonObject> vertexParts = new ArrayList<>();
+        boolean addedAnyImage = false;
+
+        for (int i = 0; i < available.size(); i++) {
+            SessionAttachment attachment = available.get(i);
+            Path file = availablePaths.get(i);
+            if (!attachment.image()) {
+                continue;
+            }
+            String mimeType = detectImageMimeType(file);
+            if (mimeType.isBlank() || !mimeType.startsWith("image/")) {
+                continue;
+            }
+            byte[] bytes;
+            try {
+                bytes = Files.readAllBytes(file);
+            } catch (Exception ignored) {
+                continue;
+            }
+            if (bytes.length == 0 || bytes.length > MAX_UPLOAD_BYTES) {
+                continue;
+            }
+
+            if (!addedAnyImage) {
+                JsonObject openAiTextPart = new JsonObject();
+                openAiTextPart.addProperty("type", "text");
+                openAiTextPart.addProperty("text", promptText);
+                openAiParts.add(openAiTextPart);
+                vertexParts.add(VertexAIMessage.textPart(promptText));
+                addedAnyImage = true;
+            }
+
+            JsonObject openAiImagePart = new JsonObject();
+            openAiImagePart.addProperty("type", "image_url");
+            JsonObject imageUrl = new JsonObject();
+            imageUrl.addProperty("url", "data:" + mimeType + ";base64," + Base64.getEncoder().encodeToString(bytes));
+            openAiImagePart.add("image_url", imageUrl);
+            openAiParts.add(openAiImagePart);
+
+            JsonObject vertexInlineDataPart = new JsonObject();
+            JsonObject inlineData = new JsonObject();
+            inlineData.addProperty("mimeType", mimeType);
+            inlineData.addProperty("data", Base64.getEncoder().encodeToString(bytes));
+            vertexInlineDataPart.add("inlineData", inlineData);
+            vertexParts.add(vertexInlineDataPart);
+        }
+
+        if (!addedAnyImage) {
+            return new PreparedPrompt(promptText, List.of(), List.of());
+        }
+        if (provider == MineClawdConfig.LlmProvider.VERTEX_AI) {
+            return new PreparedPrompt(promptText, List.of(), List.copyOf(vertexParts));
+        }
+        return new PreparedPrompt(promptText, List.copyOf(openAiParts), List.of());
+    }
+
+    private String buildAttachmentPromptText(
+            ServerCommandSource source,
+            Path workspaceRoot,
+            String request,
+            List<SessionAttachment> attachments
+    ) {
+        StringBuilder prompt = new StringBuilder();
+        String normalizedRequest = request == null ? "" : request.trim();
+        if (!normalizedRequest.isBlank()) {
+            prompt.append(normalizedRequest);
+        } else {
+            prompt.append("Please process the uploaded attachments.");
+        }
+
+        Path serverRoot = WorkspaceFileToolExecutor.serverRoot(source);
+        String workspaceToolPath = "workspace";
+        if (workspaceRoot != null) {
+            if (serverRoot != null) {
+                workspaceToolPath = WorkspaceFileToolExecutor.displayPath(serverRoot, workspaceRoot);
+            } else {
+                workspaceToolPath = workspaceRoot.toString().replace('\\', '/');
+            }
+        }
+        if (workspaceToolPath == null
+                || workspaceToolPath.isBlank()
+                || workspaceToolPath.contains(":")
+                || workspaceToolPath.startsWith("/")) {
+            workspaceToolPath = "workspace";
+        }
+
+        prompt.append("\n\nAttachment workspace (server-root relative): `")
+                .append(workspaceToolPath)
+                .append("`\n")
+                .append("Attached files:\n");
+
+        boolean hasImage = false;
+        for (SessionAttachment attachment : attachments) {
+            if (attachment == null || attachment.workspacePath() == null || attachment.workspacePath().isBlank()) {
+                continue;
+            }
+            String relative = attachment.workspacePath().replace('\\', '/');
+            while (relative.startsWith("/")) {
+                relative = relative.substring(1);
+            }
+            String fullPath;
+            if (".".equals(workspaceToolPath) || workspaceToolPath.isBlank()) {
+                fullPath = relative;
+            } else if (workspaceToolPath.endsWith("/")) {
+                fullPath = workspaceToolPath + relative;
+            } else {
+                fullPath = workspaceToolPath + "/" + relative;
+            }
+
+            prompt.append("- `").append(fullPath).append("`");
+            if (attachment.image()) {
+                prompt.append(" (image)");
+                hasImage = true;
+            }
+            if (attachment.originalName() != null && !attachment.originalName().isBlank()) {
+                prompt.append(" [original: ").append(attachment.originalName()).append("]");
+            }
+            prompt.append("\n");
+        }
+        prompt.append("Use `read-files`/`grep` with these full paths for non-image files.");
+        if (hasImage) {
+            prompt.append("\nImage attachments are included as visual inputs in this prompt.");
+        }
+        return prompt.toString().trim();
     }
 
     private ToolExecutionResult listAssetsTool(String ownerKey) {
@@ -3576,6 +4091,311 @@ public class MineClawd {
         }
     }
 
+    private void handleWorkspaceUploadChunkPacket(
+            ServerPlayerEntity player,
+            String uploadId,
+            String workspacePath,
+            String originalName,
+            boolean image,
+            int chunkIndex,
+            int totalChunks,
+            byte[] data
+    ) {
+        if (player == null) {
+            return;
+        }
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return;
+        }
+        if (!server.isSingleplayer() && !player.hasPermissionLevel(2)) {
+            sendUploadError(player, "Only OP players can upload files to the server workspace.");
+            return;
+        }
+
+        String normalizedUploadId = sanitizeUploadId(uploadId);
+        if (normalizedUploadId.isBlank()) {
+            sendUploadError(player, "Upload failed: invalid upload id.");
+            return;
+        }
+        if (totalChunks <= 0 || totalChunks > MAX_UPLOAD_CHUNKS) {
+            removeUploadAssembly(player.getUuid(), normalizedUploadId);
+            sendUploadError(player, "Upload failed: invalid chunk count.");
+            return;
+        }
+        if (chunkIndex < 0 || chunkIndex >= totalChunks) {
+            removeUploadAssembly(player.getUuid(), normalizedUploadId);
+            sendUploadError(player, "Upload failed: invalid chunk index.");
+            return;
+        }
+
+        byte[] chunk = data == null ? new byte[0] : data;
+        if (chunk.length == 0 || chunk.length > UPLOAD_CHUNK_MAX_BYTES) {
+            removeUploadAssembly(player.getUuid(), normalizedUploadId);
+            sendUploadError(player, "Upload failed: invalid chunk size.");
+            return;
+        }
+
+        String normalizedRelativePath = sanitizeWorkspaceRelativePath(workspacePath);
+        if (normalizedRelativePath.isBlank()) {
+            removeUploadAssembly(player.getUuid(), normalizedUploadId);
+            sendUploadError(player, "Upload failed: invalid target path.");
+            return;
+        }
+
+        String safeOriginalName = originalName == null ? "" : originalName.trim();
+        if (safeOriginalName.length() > UPLOAD_PACKET_NAME_MAX_CHARS) {
+            safeOriginalName = safeOriginalName.substring(0, UPLOAD_PACKET_NAME_MAX_CHARS);
+        }
+
+        UUID playerId = player.getUuid();
+        pruneExpiredUploadAssemblies(playerId);
+        ConcurrentHashMap<String, UploadAssembly> playerAssemblies = PENDING_UPLOAD_ASSEMBLIES.computeIfAbsent(
+                playerId,
+                ignored -> new ConcurrentHashMap<>()
+        );
+
+        UploadAssembly assembly = playerAssemblies.get(normalizedUploadId);
+        if (chunkIndex == 0) {
+            assembly = new UploadAssembly(normalizedRelativePath, safeOriginalName, image, totalChunks, System.currentTimeMillis());
+            playerAssemblies.put(normalizedUploadId, assembly);
+        } else if (assembly == null) {
+            sendUploadError(player, "Upload failed: missing first chunk.");
+            return;
+        }
+
+        if (!assembly.workspacePath.equals(normalizedRelativePath)
+                || !assembly.originalName.equals(safeOriginalName)
+                || assembly.image != image
+                || assembly.totalChunks != totalChunks) {
+            removeUploadAssembly(playerId, normalizedUploadId);
+            sendUploadError(player, "Upload failed: chunk metadata mismatch.");
+            return;
+        }
+
+        if (assembly.nextChunkIndex != chunkIndex) {
+            removeUploadAssembly(playerId, normalizedUploadId);
+            sendUploadError(player, "Upload failed: chunk order mismatch.");
+            return;
+        }
+
+        int nextTotalBytes = assembly.totalBytes + chunk.length;
+        if (nextTotalBytes <= 0 || nextTotalBytes > MAX_UPLOAD_BYTES) {
+            removeUploadAssembly(playerId, normalizedUploadId);
+            sendUploadError(player, "Upload failed: file is larger than " + MAX_UPLOAD_BYTES + " bytes.");
+            return;
+        }
+
+        try {
+            assembly.buffer.write(chunk);
+        } catch (Exception exception) {
+            removeUploadAssembly(playerId, normalizedUploadId);
+            sendUploadError(player, "Upload failed: " + summarizeThrowable(exception));
+            return;
+        }
+        assembly.totalBytes = nextTotalBytes;
+        assembly.nextChunkIndex = chunkIndex + 1;
+
+        if (assembly.nextChunkIndex >= assembly.totalChunks) {
+            byte[] completeData = assembly.buffer.toByteArray();
+            removeUploadAssembly(playerId, normalizedUploadId);
+            handleWorkspaceUploadPacket(player, assembly.workspacePath, assembly.originalName, assembly.image, completeData);
+        }
+    }
+
+    private void pruneExpiredUploadAssemblies(UUID playerId) {
+        if (playerId == null) {
+            return;
+        }
+        ConcurrentHashMap<String, UploadAssembly> playerAssemblies = PENDING_UPLOAD_ASSEMBLIES.get(playerId);
+        if (playerAssemblies == null || playerAssemblies.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, UploadAssembly> entry : playerAssemblies.entrySet()) {
+            UploadAssembly assembly = entry.getValue();
+            if (assembly == null || now - assembly.createdAtEpochMs > UPLOAD_ASSEMBLY_TTL_MS) {
+                playerAssemblies.remove(entry.getKey());
+            }
+        }
+        if (playerAssemblies.isEmpty()) {
+            PENDING_UPLOAD_ASSEMBLIES.remove(playerId, playerAssemblies);
+        }
+    }
+
+    private void removeUploadAssembly(UUID playerId, String uploadId) {
+        if (playerId == null || uploadId == null || uploadId.isBlank()) {
+            return;
+        }
+        ConcurrentHashMap<String, UploadAssembly> playerAssemblies = PENDING_UPLOAD_ASSEMBLIES.get(playerId);
+        if (playerAssemblies == null) {
+            return;
+        }
+        playerAssemblies.remove(uploadId);
+        if (playerAssemblies.isEmpty()) {
+            PENDING_UPLOAD_ASSEMBLIES.remove(playerId, playerAssemblies);
+        }
+    }
+
+    private String sanitizeUploadId(String rawUploadId) {
+        String normalized = rawUploadId == null ? "" : rawUploadId.trim();
+        if (normalized.isBlank() || normalized.length() > UPLOAD_PACKET_ID_MAX_CHARS) {
+            return "";
+        }
+        for (int i = 0; i < normalized.length(); i++) {
+            char c = normalized.charAt(i);
+            boolean allowed = (c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9')
+                    || c == '-'
+                    || c == '_'
+                    || c == '.';
+            if (!allowed) {
+                return "";
+            }
+        }
+        return normalized;
+    }
+
+    private void handleWorkspaceUploadPacket(
+            ServerPlayerEntity player,
+            String workspacePath,
+            String originalName,
+            boolean image,
+            byte[] data
+    ) {
+        if (player == null) {
+            return;
+        }
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return;
+        }
+        if (!server.isSingleplayer() && !player.hasPermissionLevel(2)) {
+            sendUploadError(player, "Only OP players can upload files to the server workspace.");
+            return;
+        }
+        if (data == null || data.length == 0) {
+            sendUploadError(player, "Upload failed: file data is empty.");
+            return;
+        }
+        if (data.length > MAX_UPLOAD_BYTES) {
+            sendUploadError(player, "Upload failed: file is larger than " + MAX_UPLOAD_BYTES + " bytes.");
+            return;
+        }
+
+        String normalizedRelativePath = sanitizeWorkspaceRelativePath(workspacePath);
+        if (normalizedRelativePath.isBlank()) {
+            sendUploadError(player, "Upload failed: invalid target path.");
+            return;
+        }
+
+        String ownerKey = player.getUuidAsString();
+        SessionData session = SESSION_MANAGER.loadOrCreateActiveSession(ownerKey);
+        Path workspaceRoot = SESSION_MANAGER.ensureSessionWorkspace(ownerKey, session.id());
+        Path target = workspaceRoot.resolve(normalizedRelativePath).normalize();
+        if (!target.startsWith(workspaceRoot)) {
+            sendUploadError(player, "Upload failed: path escapes workspace.");
+            return;
+        }
+
+        try {
+            if (target.getParent() != null) {
+                Files.createDirectories(target.getParent());
+            }
+            Files.write(target, data);
+            if (image) {
+                LOGGER.info("[MineClawd] Uploaded image by {} -> {} ({} bytes, original={})",
+                        player.getName().getString(),
+                        target,
+                        data.length,
+                        originalName == null ? "" : originalName);
+            } else {
+                LOGGER.info("[MineClawd] Uploaded file by {} -> {} ({} bytes, original={})",
+                        player.getName().getString(),
+                        target,
+                        data.length,
+                        originalName == null ? "" : originalName);
+            }
+        } catch (Exception exception) {
+            sendUploadError(player, "Upload failed: " + summarizeThrowable(exception));
+        }
+    }
+
+    private void handleSubmitPromptPacket(ServerPlayerEntity player, String request, String attachmentsJson) {
+        if (player == null) {
+            return;
+        }
+        ServerCommandSource source = player.getCommandSource();
+        if (!isOp(source)) {
+            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+            return;
+        }
+        String normalizedRequest = request == null ? "" : request.trim();
+        if (normalizedRequest.isBlank()) {
+            return;
+        }
+        if (normalizedRequest.length() > PROMPT_PACKET_MAX_CHARS) {
+            normalizedRequest = normalizedRequest.substring(0, PROMPT_PACKET_MAX_CHARS).trim();
+        }
+        List<SessionAttachment> attachments = sanitizePromptAttachments(SessionAttachment.fromJsonArray(attachmentsJson));
+        handleRequest(source, normalizedRequest, RequestOptions.command(attachments));
+    }
+
+    private List<SessionAttachment> sanitizePromptAttachments(List<SessionAttachment> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return List.of();
+        }
+        List<SessionAttachment> sanitized = new ArrayList<>();
+        for (SessionAttachment attachment : attachments) {
+            if (attachment == null) {
+                continue;
+            }
+            if (sanitized.size() >= MAX_PROMPT_ATTACHMENTS) {
+                break;
+            }
+            String path = sanitizeWorkspaceRelativePath(attachment.workspacePath());
+            if (path.isBlank()) {
+                continue;
+            }
+            sanitized.add(new SessionAttachment(path, attachment.originalName(), attachment.image()));
+        }
+        return List.copyOf(sanitized);
+    }
+
+    private String sanitizeWorkspaceRelativePath(String rawPath) {
+        String normalized = rawPath == null ? "" : rawPath.trim().replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.isBlank() || normalized.contains(":")) {
+            return "";
+        }
+        Path relative;
+        try {
+            relative = Path.of(normalized).normalize();
+        } catch (Exception exception) {
+            return "";
+        }
+        if (relative.isAbsolute()) {
+            return "";
+        }
+        for (Path segment : relative) {
+            if ("..".equals(segment.toString())) {
+                return "";
+            }
+        }
+        String safe = relative.toString().replace('\\', '/');
+        return safe.isBlank() || ".".equals(safe) ? "" : safe;
+    }
+
+    private void sendUploadError(ServerPlayerEntity player, String message) {
+        if (player == null || message == null || message.isBlank()) {
+            return;
+        }
+        player.sendMessage(Text.literal("[MineClawd] " + message).formatted(Formatting.RED), false);
+    }
+
     private boolean handlePendingOtherTextInput(Text message, ServerPlayerEntity sender) {
         if (sender == null) {
             return true;
@@ -3633,24 +4453,44 @@ public class MineClawd {
                         fetchUrlToolParameters()
                 ),
                 new OpenAITool(
-                        TOOL_LIST_SERVER_SCRIPTS,
-                        "List files inside kubejs/server_scripts/mineclawd/.",
-                        noArgToolParameters()
+                        TOOL_LIST_FILES,
+                        "List files/directories under the server root. Supports optional path, recursive, and limit.",
+                        listFilesToolParameters()
                 ),
                 new OpenAITool(
-                        TOOL_READ_SERVER_SCRIPT,
-                        "Read a script file from kubejs/server_scripts/mineclawd/.",
-                        pathToolParameters("Relative file path under kubejs/server_scripts/mineclawd/, e.g. recipes/ores.js")
+                        TOOL_READ_FILES,
+                        "Read a UTF-8 text file under the server root.",
+                        pathToolParameters("Relative file path under the server root, for example `logs/latest.log` or `world/serverconfig/mod.json`.")
                 ),
                 new OpenAITool(
-                        TOOL_WRITE_SERVER_SCRIPT,
-                        "Write or overwrite a script file inside kubejs/server_scripts/mineclawd/.",
+                        TOOL_WRITE_FILES,
+                        "Write or overwrite a UTF-8 file under the server root.",
                         writeToolParameters()
                 ),
                 new OpenAITool(
-                        TOOL_DELETE_SERVER_SCRIPT,
-                        "Delete a script file from kubejs/server_scripts/mineclawd/.",
-                        pathToolParameters("Relative file path under kubejs/server_scripts/mineclawd/, e.g. recipes/ores.js")
+                        TOOL_COPY_FILES,
+                        "Copy a file or directory under the server root.",
+                        copyMoveToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_MOVE_FILES,
+                        "Move or rename a file or directory under the server root.",
+                        copyMoveToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_GREP,
+                        "Search file contents using regex under the server root.",
+                        grepToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_CURL,
+                        "Perform an HTTP request and return status/body.",
+                        curlToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_READ_IMAGE,
+                        "Read and describe an image file under the server root using the configured vision model.",
+                        readImageToolParameters()
                 ),
                 new OpenAITool(
                         TOOL_RELOAD_GAME,
@@ -3765,24 +4605,44 @@ public class MineClawd {
                         fetchUrlToolParameters()
                 ),
                 new VertexAIFunction(
-                        TOOL_LIST_SERVER_SCRIPTS,
-                        "List files inside kubejs/server_scripts/mineclawd/.",
-                        noArgToolParameters()
+                        TOOL_LIST_FILES,
+                        "List files/directories under the server root. Supports optional path, recursive, and limit.",
+                        listFilesToolParameters()
                 ),
                 new VertexAIFunction(
-                        TOOL_READ_SERVER_SCRIPT,
-                        "Read a script file from kubejs/server_scripts/mineclawd/.",
-                        pathToolParameters("Relative file path under kubejs/server_scripts/mineclawd/, e.g. recipes/ores.js")
+                        TOOL_READ_FILES,
+                        "Read a UTF-8 text file under the server root.",
+                        pathToolParameters("Relative file path under the server root, for example `logs/latest.log` or `world/serverconfig/mod.json`.")
                 ),
                 new VertexAIFunction(
-                        TOOL_WRITE_SERVER_SCRIPT,
-                        "Write or overwrite a script file inside kubejs/server_scripts/mineclawd/.",
+                        TOOL_WRITE_FILES,
+                        "Write or overwrite a UTF-8 file under the server root.",
                         writeToolParameters()
                 ),
                 new VertexAIFunction(
-                        TOOL_DELETE_SERVER_SCRIPT,
-                        "Delete a script file from kubejs/server_scripts/mineclawd/.",
-                        pathToolParameters("Relative file path under kubejs/server_scripts/mineclawd/, e.g. recipes/ores.js")
+                        TOOL_COPY_FILES,
+                        "Copy a file or directory under the server root.",
+                        copyMoveToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_MOVE_FILES,
+                        "Move or rename a file or directory under the server root.",
+                        copyMoveToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_GREP,
+                        "Search file contents using regex under the server root.",
+                        grepToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_CURL,
+                        "Perform an HTTP request and return status/body.",
+                        curlToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_READ_IMAGE,
+                        "Read and describe an image file under the server root using the configured vision model.",
+                        readImageToolParameters()
                 ),
                 new VertexAIFunction(
                         TOOL_RELOAD_GAME,
@@ -3973,7 +4833,7 @@ public class MineClawd {
 
         JsonObject path = new JsonObject();
         path.addProperty("type", "string");
-        path.addProperty("description", "Relative file path under kubejs/server_scripts/mineclawd/, e.g. logic/events.js");
+        path.addProperty("description", "Relative file path under the server root, e.g. kubejs/server_scripts/mineclawd/logic/events.js");
         properties.add("path", path);
 
         JsonObject content = new JsonObject();
@@ -3982,6 +4842,127 @@ public class MineClawd {
         properties.add("content", content);
 
         return objectToolParameters(properties, "path", "content");
+    }
+
+    private JsonObject listFilesToolParameters() {
+        JsonObject properties = new JsonObject();
+
+        JsonObject path = new JsonObject();
+        path.addProperty("type", "string");
+        path.addProperty("description", "Optional relative path under the server root. Omit for root.");
+        properties.add("path", path);
+
+        JsonObject recursive = new JsonObject();
+        recursive.addProperty("type", "boolean");
+        recursive.addProperty("description", "Whether to walk directories recursively (default false).");
+        properties.add("recursive", recursive);
+
+        JsonObject limit = new JsonObject();
+        limit.addProperty("type", "integer");
+        limit.addProperty("description", "Optional max listed entries (1-500, default 120).");
+        limit.addProperty("minimum", 1);
+        limit.addProperty("maximum", 500);
+        properties.add("limit", limit);
+
+        return objectToolParameters(properties);
+    }
+
+    private JsonObject copyMoveToolParameters() {
+        JsonObject properties = new JsonObject();
+
+        JsonObject from = new JsonObject();
+        from.addProperty("type", "string");
+        from.addProperty("description", "Source relative path under server root.");
+        properties.add("from", from);
+
+        JsonObject to = new JsonObject();
+        to.addProperty("type", "string");
+        to.addProperty("description", "Destination relative path under server root.");
+        properties.add("to", to);
+
+        return objectToolParameters(properties, "from", "to");
+    }
+
+    private JsonObject grepToolParameters() {
+        JsonObject properties = new JsonObject();
+
+        JsonObject pattern = new JsonObject();
+        pattern.addProperty("type", "string");
+        pattern.addProperty("description", "Regex pattern to search.");
+        properties.add("pattern", pattern);
+
+        JsonObject path = new JsonObject();
+        path.addProperty("type", "string");
+        path.addProperty("description", "Optional relative path under server root.");
+        properties.add("path", path);
+
+        JsonObject glob = new JsonObject();
+        glob.addProperty("type", "string");
+        glob.addProperty("description", "Optional file glob filter, e.g. `*.json` or `kubejs/**/*.js`.");
+        properties.add("glob", glob);
+
+        JsonObject caseSensitive = new JsonObject();
+        caseSensitive.addProperty("type", "boolean");
+        caseSensitive.addProperty("description", "Whether matching is case-sensitive (default false).");
+        properties.add("case_sensitive", caseSensitive);
+
+        JsonObject maxMatches = new JsonObject();
+        maxMatches.addProperty("type", "integer");
+        maxMatches.addProperty("description", "Optional maximum matches to return (1-500, default 120).");
+        maxMatches.addProperty("minimum", 1);
+        maxMatches.addProperty("maximum", 500);
+        properties.add("max_matches", maxMatches);
+
+        return objectToolParameters(properties, "pattern");
+    }
+
+    private JsonObject curlToolParameters() {
+        JsonObject properties = new JsonObject();
+
+        JsonObject url = new JsonObject();
+        url.addProperty("type", "string");
+        url.addProperty("description", "HTTP(S) URL to request.");
+        properties.add("url", url);
+
+        JsonObject method = new JsonObject();
+        method.addProperty("type", "string");
+        method.addProperty("description", "Optional HTTP method: GET, POST, PUT, PATCH, DELETE, HEAD.");
+        properties.add("method", method);
+
+        JsonObject body = new JsonObject();
+        body.addProperty("type", "string");
+        body.addProperty("description", "Optional request body for non-GET methods.");
+        properties.add("body", body);
+
+        JsonObject headers = new JsonObject();
+        headers.addProperty("type", "object");
+        headers.addProperty("description", "Optional request headers as key/value strings.");
+        properties.add("headers", headers);
+
+        JsonObject timeoutSeconds = new JsonObject();
+        timeoutSeconds.addProperty("type", "integer");
+        timeoutSeconds.addProperty("description", "Optional timeout in seconds (1-120, default 30).");
+        timeoutSeconds.addProperty("minimum", 1);
+        timeoutSeconds.addProperty("maximum", 120);
+        properties.add("timeout_seconds", timeoutSeconds);
+
+        return objectToolParameters(properties, "url");
+    }
+
+    private JsonObject readImageToolParameters() {
+        JsonObject properties = new JsonObject();
+
+        JsonObject path = new JsonObject();
+        path.addProperty("type", "string");
+        path.addProperty("description", "Relative image path under the server root.");
+        properties.add("path", path);
+
+        JsonObject prompt = new JsonObject();
+        prompt.addProperty("type", "string");
+        prompt.addProperty("description", "Optional specific instruction for analyzing the image.");
+        properties.add("prompt", prompt);
+
+        return objectToolParameters(properties, "path");
     }
 
     private JsonObject dynamicItemToolParameters() {
@@ -4434,6 +5415,7 @@ public class MineClawd {
     }
 
     private String buildSystemPrompt(
+            ServerCommandSource source,
             MineClawdConfig config,
             String ownerKey,
             boolean dynamicRegistryEnabled,
@@ -4444,10 +5426,27 @@ public class MineClawd {
                 ? BASE_SYSTEM_PROMPT
                 : configured.trim();
         Persona persona = PERSONA_MANAGER.loadActivePersona(ownerKey);
+        Path serverRoot = WorkspaceFileToolExecutor.serverRoot(source);
+        if (serverRoot == null) {
+            serverRoot = Platform.getGameFolder().toAbsolutePath().normalize();
+        }
+        Path serverScriptsPath = serverRoot.resolve("kubejs").resolve("server_scripts").normalize();
+        String serverScriptsToolPath = WorkspaceFileToolExecutor.displayPath(serverRoot, serverScriptsPath);
+        if (serverScriptsToolPath.isBlank()
+                || ".".equals(serverScriptsToolPath)
+                || serverScriptsToolPath.contains(":")
+                || serverScriptsToolPath.startsWith("/")) {
+            serverScriptsToolPath = "kubejs/server_scripts";
+        }
+
         String env = buildEnvironmentInfo();
+        String installedMods = buildInstalledModsInfo();
         StringBuilder prompt = new StringBuilder(basePrompt);
         if (!env.isBlank()) {
             prompt.append("\n\nEnvironment:\n").append(env);
+        }
+        if (!installedMods.isBlank()) {
+            prompt.append("\n\nInstalled mods:\n").append(installedMods);
         }
         if (hasConfiguredTavilyKey(config)) {
             prompt.append("\n\nSearch tool status:\n")
@@ -4467,11 +5466,29 @@ public class MineClawd {
                     .append(persona.content().trim());
         }
         if (session != null) {
+            Path workspacePath = SESSION_MANAGER.ensureSessionWorkspace(ownerKey, session.id());
+            String workspaceToolPath = WorkspaceFileToolExecutor.displayPath(serverRoot, workspacePath);
+            if (workspaceToolPath.isBlank()
+                    || ".".equals(workspaceToolPath)
+                    || workspaceToolPath.contains(":")
+                    || workspaceToolPath.startsWith("/")) {
+                workspaceToolPath = "mineclawd/sessions/<owner>/<session>/workspace";
+            }
             prompt.append("\n\nSession context:\n")
                     .append("Current session id: ").append(session.id()).append("\n")
                     .append("Current session token: ").append(session.commandToken()).append("\n")
+                    .append("File tools path rules:\n")
+                    .append("- Use server-root-relative paths only (no drive letters, no leading slash).\n")
+                    .append("- server-scripts: ").append(serverScriptsToolPath).append("\n")
+                    .append("- workspace: ").append(workspaceToolPath).append("\n")
+                    .append("Uploaded files/images for this session are stored in workspace.\n")
                     .append("For persistent callback scripts, prefer the stable session id when using `mineclawd.requestWithSession`.\n")
                     .append("If this session is removed later, callback requests using it will fail safely.");
+        } else {
+            prompt.append("\n\nFile path context:\n")
+                    .append("Use server-root-relative paths in file tools (no drive letters, no leading slash).\n")
+                    .append("Most-used path: server-scripts = ").append(serverScriptsToolPath).append("\n")
+                    .append("Session workspace path becomes available on session-backed requests.");
         }
         if (dynamicRegistryEnabled) {
             prompt.append("\n\n")
@@ -4506,6 +5523,45 @@ public class MineClawd {
         }
         if (!mineclawd.isBlank()) {
             sb.append("MineClawd ").append(mineclawd).append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private String buildInstalledModsInfo() {
+        Map<String, Mod> byId = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (Mod mod : Platform.getMods()) {
+            if (mod == null) {
+                continue;
+            }
+            String modId = mod.getModId() == null ? "" : mod.getModId().trim();
+            if (modId.isBlank()) {
+                continue;
+            }
+            byId.putIfAbsent(modId, mod);
+        }
+        if (byId.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Loaded mods (").append(byId.size()).append("):\n");
+        for (Mod mod : byId.values()) {
+            if (mod == null) {
+                continue;
+            }
+            String modId = mod.getModId() == null ? "" : mod.getModId().trim();
+            if (modId.isBlank()) {
+                continue;
+            }
+            String name = mod.getName() == null ? "" : mod.getName().trim();
+            String version = mod.getVersion() == null ? "" : mod.getVersion().trim();
+            sb.append("- ").append(modId);
+            if (!name.isBlank() && !name.equalsIgnoreCase(modId)) {
+                sb.append(" (").append(name).append(")");
+            }
+            if (!version.isBlank()) {
+                sb.append(" v").append(version);
+            }
+            sb.append('\n');
         }
         return sb.toString().trim();
     }
@@ -4696,24 +5752,43 @@ public class MineClawd {
                 shortText = "Searching the web";
                 hoverText = query.isBlank() ? "Web search query unavailable." : "Query: " + query;
             }
-            case TOOL_LIST_SERVER_SCRIPTS -> {
-                shortText = "Listing server scripts";
-                hoverText = "Listing files under kubejs/server_scripts/mineclawd/.";
-            }
-            case TOOL_READ_SERVER_SCRIPT -> {
+            case TOOL_LIST_FILES -> {
                 String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Reading server script" : "Reading script " + summarizePathTail(path);
+                shortText = path.isBlank() ? "Listing files" : "Listing files in " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Listing paths under server root." : "Path: " + path;
+            }
+            case TOOL_READ_FILES -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Reading file" : "Reading " + summarizePathTail(path);
                 hoverText = path.isBlank() ? "" : "Path: " + path;
             }
-            case TOOL_WRITE_SERVER_SCRIPT -> {
+            case TOOL_WRITE_FILES -> {
                 String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Writing server script" : "Writing script " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "Writing a server script file." : "Path: " + path;
+                shortText = path.isBlank() ? "Writing file" : "Writing " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Writing a server file." : "Path: " + path;
             }
-            case TOOL_DELETE_SERVER_SCRIPT -> {
+            case TOOL_COPY_FILES -> {
+                shortText = "Copying files";
+                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
+            }
+            case TOOL_MOVE_FILES -> {
+                shortText = "Moving files";
+                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
+            }
+            case TOOL_GREP -> {
+                shortText = "Searching files";
+                hoverText = "Pattern: " + readOptionalStringArg(args, "pattern");
+            }
+            case TOOL_CURL -> {
+                String rawUrl = readOptionalStringArg(args, "url");
+                String host = extractUrlHost(rawUrl);
+                shortText = host.isBlank() ? "Running curl" : "Requesting " + host;
+                hoverText = rawUrl.isBlank() ? "" : "URL: " + rawUrl;
+            }
+            case TOOL_READ_IMAGE -> {
                 String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Deleting server script" : "Deleting script " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "Deleting a server script file." : "Path: " + path;
+                shortText = path.isBlank() ? "Reading image" : "Reading image " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "" : "Path: " + path;
             }
             case TOOL_RELOAD_GAME -> {
                 shortText = "Reloading game scripts";
@@ -4784,24 +5859,43 @@ public class MineClawd {
                 shortText = "Completed web search";
                 hoverText = query.isBlank() ? "Web search query unavailable." : "Query: " + query;
             }
-            case TOOL_LIST_SERVER_SCRIPTS -> {
-                shortText = "Listed server scripts";
-                hoverText = "Listed files under kubejs/server_scripts/mineclawd/.";
-            }
-            case TOOL_READ_SERVER_SCRIPT -> {
+            case TOOL_LIST_FILES -> {
                 String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Read server script" : "Read script " + summarizePathTail(path);
+                shortText = path.isBlank() ? "Listed files" : "Listed files in " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Listed paths under server root." : "Path: " + path;
+            }
+            case TOOL_READ_FILES -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Read file" : "Read " + summarizePathTail(path);
                 hoverText = path.isBlank() ? "" : "Path: " + path;
             }
-            case TOOL_WRITE_SERVER_SCRIPT -> {
+            case TOOL_WRITE_FILES -> {
                 String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Wrote server script" : "Wrote script " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "Wrote a server script file." : "Path: " + path;
+                shortText = path.isBlank() ? "Wrote file" : "Wrote " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Wrote a server file." : "Path: " + path;
             }
-            case TOOL_DELETE_SERVER_SCRIPT -> {
+            case TOOL_COPY_FILES -> {
+                shortText = "Copied files";
+                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
+            }
+            case TOOL_MOVE_FILES -> {
+                shortText = "Moved files";
+                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
+            }
+            case TOOL_GREP -> {
+                shortText = "Searched files";
+                hoverText = "Pattern: " + readOptionalStringArg(args, "pattern");
+            }
+            case TOOL_CURL -> {
+                String rawUrl = readOptionalStringArg(args, "url");
+                String host = extractUrlHost(rawUrl);
+                shortText = host.isBlank() ? "Completed curl" : "Fetched " + host;
+                hoverText = rawUrl.isBlank() ? "" : "URL: " + rawUrl;
+            }
+            case TOOL_READ_IMAGE -> {
                 String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Deleted server script" : "Deleted script " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "Deleted a server script file." : "Path: " + path;
+                shortText = path.isBlank() ? "Read image" : "Read image " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "" : "Path: " + path;
             }
             case TOOL_RELOAD_GAME -> {
                 shortText = "Reloaded game scripts";
@@ -5659,7 +6753,32 @@ public class MineClawd {
         }
     }
 
+    private static final class UploadAssembly {
+        private final String workspacePath;
+        private final String originalName;
+        private final boolean image;
+        private final int totalChunks;
+        private final long createdAtEpochMs;
+        private final ByteArrayOutputStream buffer;
+        private int nextChunkIndex;
+        private int totalBytes;
+
+        private UploadAssembly(String workspacePath, String originalName, boolean image, int totalChunks, long createdAtEpochMs) {
+            this.workspacePath = workspacePath;
+            this.originalName = originalName;
+            this.image = image;
+            this.totalChunks = totalChunks;
+            this.createdAtEpochMs = createdAtEpochMs;
+            this.buffer = new ByteArrayOutputStream();
+            this.nextChunkIndex = 0;
+            this.totalBytes = 0;
+        }
+    }
+
     private record ToolStatusDescriptor(String shortText, String hoverText) {
+    }
+
+    private record PreparedPrompt(String text, List<JsonObject> openAiParts, List<JsonObject> vertexParts) {
     }
 
     private record RequestOptions(
@@ -5667,18 +6786,23 @@ public class MineClawd {
             boolean sessionBacked,
             String ownerKey,
             String sessionReference,
-            boolean interactiveErrorActions
+            boolean interactiveErrorActions,
+            List<SessionAttachment> attachments
     ) {
         private static RequestOptions command() {
-            return new RequestOptions(true, true, null, null, true);
+            return command(List.of());
+        }
+
+        private static RequestOptions command(List<SessionAttachment> attachments) {
+            return new RequestOptions(true, true, null, null, true, attachments == null ? List.of() : List.copyOf(attachments));
         }
 
         private static RequestOptions sessionBound(String ownerKey, String sessionReference) {
-            return new RequestOptions(false, true, ownerKey, sessionReference, true);
+            return new RequestOptions(false, true, ownerKey, sessionReference, true, List.of());
         }
 
         private static RequestOptions oneShot(String ownerKey) {
-            return new RequestOptions(false, false, ownerKey, null, false);
+            return new RequestOptions(false, false, ownerKey, null, false, List.of());
         }
     }
 
@@ -5851,6 +6975,7 @@ public class MineClawd {
             String requestId,
             String ownerKey,
             String sessionId,
+            MineClawdConfig.LlmProvider provider,
             String userRequest,
             boolean sessionBacked,
             boolean interactiveErrorActions,

@@ -29,14 +29,22 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 import org.lwjgl.glfw.GLFW;
 
+import java.awt.FileDialog;
+import java.awt.Frame;
+import java.awt.GraphicsEnvironment;
+import java.io.File;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
 public final class AgentResponseOverlay {
@@ -65,10 +73,12 @@ public final class AgentResponseOverlay {
     private static final int MENU_ITEM_HEIGHT = 16;
     private static final int INPUT_HEIGHT = 18;
     private static final int INPUT_GAP = 6;
+    private static final int INPUT_UPLOAD_BUTTON_WIDTH = 20;
     private static final int INPUT_SEND_BUTTON_WIDTH = 40;
     private static final int INPUT_RETRY_BUTTON_WIDTH = 46;
     private static final int INPUT_TEXT_PADDING = 4;
     private static final int INPUT_MAX_CHARS = 600;
+    private static final int INPUT_MAX_ATTACHMENTS = 12;
     private static final long TOOL_STATUS_ANIM_STEP_MS = 95L;
     private static final long TOOL_STATUS_ANIM_PAUSE_MS = 1000L;
     private static final long TOOL_STATUS_MIN_VISIBLE_MS = 900L;
@@ -168,6 +178,7 @@ public final class AgentResponseOverlay {
     private static final RectBounds inputFieldBounds = new RectBounds();
     private static final RectBounds inputRetryBounds = new RectBounds();
     private static final RectBounds inputSendBounds = new RectBounds();
+    private static final RectBounds inputUploadBounds = new RectBounds();
     private static final RectBounds assetTeleportButton = new RectBounds();
     private static final RectBounds assetGiveButton = new RectBounds();
     private static final RectBounds assetModifyButton = new RectBounds();
@@ -187,6 +198,8 @@ public final class AgentResponseOverlay {
     private static int inputCursorIndex = 0;
     private static int inputSelectionIndex = 0;
     private static int inputViewStart = 0;
+    private static final List<Path> pendingAttachmentFiles = new ArrayList<>();
+    private static final AtomicBoolean attachmentDialogOpen = new AtomicBoolean(false);
     private static String failedRetryToken = "";
 
     private static boolean questionOtherInputActive = false;
@@ -980,6 +993,7 @@ public final class AgentResponseOverlay {
                 inputFieldBounds.clear();
                 inputRetryBounds.clear();
                 inputSendBounds.clear();
+                inputUploadBounds.clear();
             }
             int contentWidth = Math.max(10, contentRight - contentLeft);
 
@@ -1257,7 +1271,7 @@ public final class AgentResponseOverlay {
             questionOtherFocused = true;
             return;
         }
-        appendQuestionAnswerToHistory(buildQuestionAnswerSummary("Custom answer: " + text));
+        appendQuestionAnswerToHistory(text);
         QuestionResponsePayload payload = new QuestionResponsePayload(
                 pendingQuestion.questionId(),
                 QuestionResponsePayload.Type.OTHER,
@@ -1920,17 +1934,32 @@ public final class AgentResponseOverlay {
     ) {
         int barTop = panelY + panelHeight - CONTENT_PADDING - INPUT_HEIGHT;
         int barBottom = barTop + INPUT_HEIGHT;
+        int uploadLeft = panelX + CONTENT_PADDING;
+        int uploadRight = uploadLeft + INPUT_UPLOAD_BUTTON_WIDTH;
         int sendRight = panelX + panelWidth - CONTENT_PADDING;
         int sendLeft = sendRight - INPUT_SEND_BUTTON_WIDTH;
         boolean showRetryButton = shouldShowRetryButton();
         int retryRight = sendLeft - 4;
         int retryLeft = retryRight - INPUT_RETRY_BUTTON_WIDTH;
-        int fieldLeft = panelX + CONTENT_PADDING;
+        int fieldLeft = uploadRight + 4;
         if (!showRetryButton || retryLeft <= fieldLeft + 14) {
             showRetryButton = false;
             inputRetryBounds.clear();
         }
         int fieldRight = Math.max(fieldLeft + 12, (showRetryButton ? retryLeft : sendLeft) - 4);
+
+        boolean uploadHovered = interactiveMode
+                && mouseX >= uploadLeft && mouseX <= uploadRight
+                && mouseY >= barTop && mouseY <= barBottom;
+        int uploadFill = uploadHovered ? 0xFF4A6178 : 0xFF374A5E;
+        context.fill(uploadLeft, barTop, uploadRight, barBottom, uploadFill);
+        context.fill(uploadLeft, barTop, uploadRight, barTop + 1, 0xFF86A6C6);
+        context.fill(uploadLeft, barBottom - 1, uploadRight, barBottom, 0xFF1D2B3A);
+        context.drawTextWithShadow(renderer, "+", uploadLeft + 7, barTop + 4, 0xFFF5FBFF);
+        if (!pendingAttachmentFiles.isEmpty()) {
+            String countText = Integer.toString(Math.min(99, pendingAttachmentFiles.size()));
+            context.drawTextWithShadow(renderer, countText, uploadLeft + 2, barTop + 10, 0xFFFFE4A3);
+        }
 
         context.fill(fieldLeft, barTop, fieldRight, barBottom, 0xCC18212D);
         int fieldBorder = inputFocused ? 0xFFA0C5E9 : 0xFF5A6B80;
@@ -2006,6 +2035,7 @@ public final class AgentResponseOverlay {
 
         inputFieldBounds.set(fieldLeft, barTop, fieldRight, barBottom);
         inputSendBounds.set(sendLeft, barTop, sendRight, barBottom);
+        inputUploadBounds.set(uploadLeft, barTop, uploadRight, barBottom);
     }
 
     private static boolean handleInputClick(MinecraftClient client, double mouseX, double mouseY) {
@@ -2013,6 +2043,12 @@ public final class AgentResponseOverlay {
             inputFocused = false;
             inputDragSelecting = false;
             return false;
+        }
+        if (inputUploadBounds.contains(mouseX, mouseY)) {
+            inputFocused = true;
+            inputDragSelecting = false;
+            openAttachmentFileDialog(client);
+            return true;
         }
         if (inputFieldBounds.contains(mouseX, mouseY)) {
             inputFocused = true;
@@ -2065,7 +2101,7 @@ public final class AgentResponseOverlay {
             return;
         }
         if (button.skip) {
-            appendQuestionAnswerToHistory(buildQuestionAnswerSummary("Skipped this question."));
+            appendQuestionAnswerToHistory("Skipped this question.");
             submitQuestion(client, new QuestionResponsePayload(
                     pendingQuestion.questionId(),
                     QuestionResponsePayload.Type.SKIP,
@@ -2081,9 +2117,9 @@ public final class AgentResponseOverlay {
         }
         String selected = options.get(optionIndex);
         if (isBuiltInOtherQuestionOption(selected)) {
-            appendQuestionAnswerToHistory(buildQuestionAnswerSummary("Selected Other option. Waiting for custom chat input."));
+            appendQuestionAnswerToHistory(selected);
         } else {
-            appendQuestionAnswerToHistory(buildQuestionAnswerSummary("Selected option " + (optionIndex + 1) + ": " + selected));
+            appendQuestionAnswerToHistory(selected);
         }
         submitQuestion(client, new QuestionResponsePayload(
                 pendingQuestion.questionId(),
@@ -2114,23 +2150,25 @@ public final class AgentResponseOverlay {
                 || "\u5176\u5b83".equals(normalized);
     }
 
-    private static String buildQuestionAnswerSummary(String answerLine) {
+    private static void appendQuestionAnswerToHistory(String answer) {
         String question = pendingQuestion == null ? "" : pendingQuestion.question();
         String trimmedQuestion = question == null ? "" : question.trim();
-        if (trimmedQuestion.isBlank()) {
-            return answerLine;
-        }
-        return "AskUserQuestion: " + trimmedQuestion + "\n" + answerLine;
-    }
-
-    private static void appendQuestionAnswerToHistory(String answer) {
-        if (answer == null || answer.isBlank()) {
+        String trimmedAnswer = answer == null ? "" : answer.trim();
+        if (trimmedQuestion.isBlank() && trimmedAnswer.isBlank()) {
             return;
         }
         if (content.length() > 0) {
             content.append("\n\n");
         }
-        content.append(markUserLines(answer.trim()));
+        if (!trimmedQuestion.isBlank()) {
+            content.append(trimmedQuestion);
+        }
+        if (!trimmedAnswer.isBlank()) {
+            if (!trimmedQuestion.isBlank()) {
+                content.append('\n');
+            }
+            content.append(markUserLines(trimmedAnswer));
+        }
         parsedDirty = true;
         wrappedDirty = true;
         wrappedWidth = -1;
@@ -2894,12 +2932,15 @@ public final class AgentResponseOverlay {
         inputFieldBounds.clear();
         inputRetryBounds.clear();
         inputSendBounds.clear();
+        inputUploadBounds.clear();
         inputFocused = false;
         inputDragSelecting = false;
         inputDraft = "";
         inputCursorIndex = 0;
         inputSelectionIndex = 0;
         inputViewStart = 0;
+        attachmentDialogOpen.set(false);
+        pendingAttachmentFiles.clear();
         sessionsScrollY = 0.0;
         assetsScrollY = 0.0;
         selectedAssetId = "";
@@ -3774,6 +3815,307 @@ public final class AgentResponseOverlay {
         return new InputRenderWindow(inputViewStart, safeEnd, safeDraft.substring(inputViewStart, safeEnd));
     }
 
+    private static void openAttachmentFileDialog(MinecraftClient client) {
+        if (client == null) {
+            return;
+        }
+        if (!attachmentDialogOpen.compareAndSet(false, true)) {
+            sendOverlayClientNotice(client, "File picker is already open.");
+            return;
+        }
+
+        Thread pickerThread = new Thread(() -> {
+            FileDialogSelection selectionResult;
+            try {
+                selectionResult = openNativeFileDialog();
+            } catch (Throwable ignored) {
+                selectionResult = new FileDialogSelection(false, null);
+            }
+            MinecraftClient instance = MinecraftClient.getInstance();
+            if (instance == null) {
+                attachmentDialogOpen.set(false);
+                return;
+            }
+            FileDialogSelection finalSelectionResult = selectionResult;
+            instance.execute(() -> {
+                attachmentDialogOpen.set(false);
+                applyAttachmentDialogSelection(instance, finalSelectionResult);
+            });
+        }, "MineClawd-AttachmentPicker");
+        pickerThread.setDaemon(true);
+        try {
+            pickerThread.start();
+        } catch (Exception ignored) {
+            attachmentDialogOpen.set(false);
+            sendOverlayClientNotice(client, "Failed to open file picker.");
+        }
+    }
+
+    private static void applyAttachmentDialogSelection(MinecraftClient client, FileDialogSelection selectionResult) {
+        if (client == null || selectionResult == null) {
+            return;
+        }
+        if (!selectionResult.handled()) {
+            sendOverlayClientNotice(client, "File picker is unavailable on this client.");
+            return;
+        }
+
+        String selection = selectionResult.selection();
+        if (selection == null || selection.isBlank()) {
+            return;
+        }
+
+        List<String> paths = decodeNativeDialogSelection(selection);
+        int added = 0;
+        for (String rawPath : paths) {
+            if (rawPath == null || rawPath.isBlank()) {
+                continue;
+            }
+            Path path;
+            try {
+                path = Path.of(rawPath).toAbsolutePath().normalize();
+            } catch (Exception ignored) {
+                continue;
+            }
+            if (!Files.isRegularFile(path)) {
+                continue;
+            }
+            if (pendingAttachmentFiles.contains(path)) {
+                continue;
+            }
+            if (pendingAttachmentFiles.size() >= INPUT_MAX_ATTACHMENTS) {
+                sendOverlayClientNotice(client, "Attachment limit reached (" + INPUT_MAX_ATTACHMENTS + ").");
+                break;
+            }
+            pendingAttachmentFiles.add(path);
+            added++;
+        }
+        if (added > 0) {
+            sendOverlayClientNotice(client, "Queued " + added + " attachment" + (added == 1 ? "" : "s") + ". Send to upload.");
+        }
+    }
+
+    private static FileDialogSelection openNativeFileDialog() {
+        FileDialogSelection tinyFdResult = tryOpenTinyFileDialog();
+        if (tinyFdResult.handled()) {
+            return tinyFdResult;
+        }
+        FileDialogSelection awtResult = tryOpenAwtFileDialog();
+        if (awtResult.handled()) {
+            return awtResult;
+        }
+        return new FileDialogSelection(false, null);
+    }
+
+    private static FileDialogSelection tryOpenTinyFileDialog() {
+        try {
+            Class<?> tinyFd = Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
+            for (Method method : tinyFd.getMethods()) {
+                if (!"tinyfd_openFileDialog".equals(method.getName()) || !Modifier.isStatic(method.getModifiers())) {
+                    continue;
+                }
+                Object[] args = buildTinyFdOpenDialogArgs(method);
+                if (args == null) {
+                    continue;
+                }
+                Object result = method.invoke(null, args);
+                return new FileDialogSelection(true, result == null ? null : result.toString());
+            }
+        } catch (Exception ignored) {
+        }
+        return new FileDialogSelection(false, null);
+    }
+
+    private static Object[] buildTinyFdOpenDialogArgs(Method method) {
+        if (method == null) {
+            return null;
+        }
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        if (parameterTypes.length != 4 && parameterTypes.length != 5) {
+            return null;
+        }
+        Class<?> lastType = parameterTypes[parameterTypes.length - 1];
+        if (lastType != boolean.class && lastType != Boolean.class) {
+            return null;
+        }
+
+        Object[] args = new Object[parameterTypes.length];
+        if (!assignDialogArgument(args, 0, parameterTypes[0], "Select files/images")) {
+            return null;
+        }
+        if (!assignDialogArgument(args, 1, parameterTypes[1], "")) {
+            return null;
+        }
+        if (parameterTypes.length == 4) {
+            if (!assignDialogArgument(args, 2, parameterTypes[2], null)) {
+                return null;
+            }
+            if (!assignDialogArgument(args, 3, parameterTypes[3], Boolean.TRUE)) {
+                return null;
+            }
+        } else {
+            if (!assignDialogArgument(args, 2, parameterTypes[2], null)) {
+                return null;
+            }
+            if (!assignDialogArgument(args, 3, parameterTypes[3], null)) {
+                return null;
+            }
+            if (!assignDialogArgument(args, 4, parameterTypes[4], Boolean.TRUE)) {
+                return null;
+            }
+        }
+        return args;
+    }
+
+    private static boolean assignDialogArgument(Object[] args, int index, Class<?> targetType, Object value) {
+        if (args == null || index < 0 || index >= args.length || targetType == null) {
+            return false;
+        }
+        if (targetType == boolean.class || targetType == Boolean.class) {
+            args[index] = value instanceof Boolean boolValue ? boolValue : Boolean.FALSE;
+            return true;
+        }
+        if (targetType == String.class
+                || targetType == CharSequence.class
+                || CharSequence.class.isAssignableFrom(targetType)) {
+            args[index] = value == null ? "" : value.toString();
+            return true;
+        }
+        if (targetType.isArray()) {
+            Class<?> componentType = targetType.getComponentType();
+            if (componentType == String.class
+                    || componentType == CharSequence.class
+                    || CharSequence.class.isAssignableFrom(componentType)) {
+                args[index] = Array.newInstance(componentType, 0);
+                return true;
+            }
+            return false;
+        }
+        if (!targetType.isPrimitive()) {
+            args[index] = null;
+            return true;
+        }
+        if (targetType == int.class || targetType == short.class || targetType == byte.class) {
+            args[index] = 0;
+            return true;
+        }
+        if (targetType == long.class) {
+            args[index] = 0L;
+            return true;
+        }
+        if (targetType == float.class) {
+            args[index] = 0.0F;
+            return true;
+        }
+        if (targetType == double.class) {
+            args[index] = 0.0D;
+            return true;
+        }
+        if (targetType == char.class) {
+            args[index] = '\0';
+            return true;
+        }
+        return false;
+    }
+
+    private static FileDialogSelection tryOpenAwtFileDialog() {
+        if (GraphicsEnvironment.isHeadless()) {
+            return new FileDialogSelection(false, null);
+        }
+
+        FileDialog dialog = null;
+        try {
+            dialog = new FileDialog((Frame) null, "Select files/images", FileDialog.LOAD);
+            dialog.setMultipleMode(true);
+            dialog.setVisible(true);
+
+            File[] files = dialog.getFiles();
+            if (files == null || files.length == 0) {
+                return new FileDialogSelection(true, null);
+            }
+            StringBuilder selection = new StringBuilder();
+            for (File file : files) {
+                if (file == null) {
+                    continue;
+                }
+                String absolute = file.getAbsolutePath();
+                if (absolute == null || absolute.isBlank()) {
+                    continue;
+                }
+                if (selection.length() > 0) {
+                    selection.append('|');
+                }
+                selection.append(absolute);
+            }
+            return new FileDialogSelection(true, selection.length() == 0 ? null : selection.toString());
+        } catch (Throwable ignored) {
+            return new FileDialogSelection(false, null);
+        } finally {
+            if (dialog != null) {
+                dialog.dispose();
+            }
+        }
+    }
+
+    private static List<String> decodeNativeDialogSelection(String selection) {
+        List<String> decoded = new ArrayList<>();
+        if (selection == null || selection.isBlank()) {
+            return decoded;
+        }
+        if (!selection.contains("|")) {
+            decoded.add(selection);
+            return decoded;
+        }
+
+        String[] parts = selection.split("\\|");
+        if (parts.length == 0) {
+            return decoded;
+        }
+
+        Path parent = null;
+        try {
+            parent = Path.of(parts[0]);
+        } catch (Exception ignored) {
+        }
+
+        if (parent != null && Files.isDirectory(parent)) {
+            boolean namesOnly = true;
+            for (int i = 1; i < parts.length; i++) {
+                String part = parts[i];
+                if (part == null || part.isBlank()) {
+                    continue;
+                }
+                if (part.contains("/") || part.contains("\\") || part.contains(":")) {
+                    namesOnly = false;
+                    break;
+                }
+            }
+            if (namesOnly) {
+                for (int i = 1; i < parts.length; i++) {
+                    String part = parts[i];
+                    if (part == null || part.isBlank()) {
+                        continue;
+                    }
+                    decoded.add(parent.resolve(part).toString());
+                }
+                if (!decoded.isEmpty()) {
+                    return decoded;
+                }
+            }
+        }
+
+        for (String part : parts) {
+            if (part == null || part.isBlank()) {
+                continue;
+            }
+            decoded.add(part);
+        }
+        return decoded;
+    }
+
+    private record FileDialogSelection(boolean handled, String selection) {
+    }
+
     private static void submitInputDraft(MinecraftClient client) {
         if (client == null) {
             return;
@@ -3789,8 +4131,24 @@ public final class AgentResponseOverlay {
             autoCreateSessionOnNextInputSubmit = false;
             sendCommand(client, "mineclawd sessions new");
         }
-        sendCommand(client, "mclawd " + draft);
+        if (pendingAttachmentFiles.isEmpty()) {
+            sendCommand(client, "mclawd " + draft);
+        } else {
+            boolean submitted = MineClawdClientNetworking.sendPromptWithAttachments(client, draft, List.copyOf(pendingAttachmentFiles));
+            if (!submitted) {
+                sendOverlayClientNotice(client, "Attachment upload failed. Sending prompt without attachments.");
+                sendCommand(client, "mclawd " + draft);
+            }
+            pendingAttachmentFiles.clear();
+        }
         setInputDraftText("", true);
+    }
+
+    private static void sendOverlayClientNotice(MinecraftClient client, String message) {
+        if (client == null || client.player == null || message == null || message.isBlank()) {
+            return;
+        }
+        client.player.sendMessage(Text.literal("[MineClawd] " + message), false);
     }
 
     private static void requestRetry(MinecraftClient client) {

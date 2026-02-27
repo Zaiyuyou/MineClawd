@@ -21,8 +21,10 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -33,6 +35,8 @@ public final class SessionManager {
     private static final Pattern TITLE_WHITESPACE = Pattern.compile("\\s+");
     private static final Pattern TITLE_SLUG_SANITIZE = Pattern.compile("[^a-zA-Z0-9\\s-]");
     private static final String ACTIVE_FILE_NAME = "active.json";
+    private static final String CONVERSATION_FILE_NAME = "conversation.json";
+    private static final String WORKSPACE_DIR_NAME = "workspace";
     private static final String DEFAULT_TITLE = "New Session";
     private static final int TITLE_MAX_LENGTH = 100;
     private static final int TITLE_SLUG_MAX_LENGTH = 48;
@@ -56,7 +60,14 @@ public final class SessionManager {
         ensureDirectory(ownerDir);
         String activeId = readActiveId(ownerDir);
         if (activeId != null && !activeId.isBlank()) {
-            SessionData active = readSession(ownerDir.resolve(activeId + ".json"));
+            SessionData active = readSession(conversationPath(ownerDir, activeId));
+            if (active == null) {
+                Path legacyPath = legacySessionPath(ownerDir, activeId);
+                active = readSession(legacyPath);
+                if (active != null) {
+                    migrateLegacySession(ownerDir, legacyPath, active);
+                }
+            }
             if (active != null) {
                 return active;
             }
@@ -158,7 +169,11 @@ public final class SessionManager {
         }
 
         try {
-            Files.deleteIfExists(ownerDir.resolve(target.id() + ".json"));
+            Path sessionDir = sessionDirectory(ownerDir, target.id());
+            if (Files.isDirectory(sessionDir)) {
+                deleteDirectoryRecursively(sessionDir);
+            }
+            Files.deleteIfExists(legacySessionPath(ownerDir, target.id()));
         } catch (IOException exception) {
             MineClawd.LOGGER.warn("Failed to remove session {}: {}", target.id(), exception.getMessage());
             return false;
@@ -184,6 +199,20 @@ public final class SessionManager {
         Path ownerDir = ownerDirectory(ownerKey);
         ensureDirectory(ownerDir);
         writeSession(ownerDir, session);
+    }
+
+    public synchronized Path ensureSessionWorkspace(String ownerKey, String sessionId) {
+        Path ownerDir = ownerDirectory(ownerKey);
+        ensureDirectory(ownerDir);
+        String normalizedSessionId = sessionId == null ? "" : sessionId.trim().toLowerCase(Locale.ROOT);
+        if (normalizedSessionId.isBlank()) {
+            throw new IllegalArgumentException("Session id is required.");
+        }
+        Path sessionDir = sessionDirectory(ownerDir, normalizedSessionId);
+        ensureDirectory(sessionDir);
+        Path workspace = sessionDir.resolve(WORKSPACE_DIR_NAME);
+        ensureDirectory(workspace);
+        return workspace;
     }
 
     public static String normalizeTitle(String value) {
@@ -256,30 +285,56 @@ public final class SessionManager {
     }
 
     private List<SessionData> readAllSessions(Path ownerDir) {
-        List<SessionData> sessions = new ArrayList<>();
+        Map<String, SessionData> sessionsById = new LinkedHashMap<>();
+        try (var stream = Files.list(ownerDir)) {
+            stream.filter(Files::isDirectory)
+                    .forEach(path -> {
+                        SessionData session = readSession(path.resolve(CONVERSATION_FILE_NAME));
+                        if (session != null && !session.id().isBlank()) {
+                            sessionsById.put(session.id().toLowerCase(Locale.ROOT), session);
+                        }
+                    });
+        } catch (IOException exception) {
+            MineClawd.LOGGER.warn("Failed to read session directories in {}: {}", ownerDir, exception.getMessage());
+        }
+
         try (var stream = Files.list(ownerDir)) {
             stream.filter(Files::isRegularFile)
                     .filter(path -> path.getFileName().toString().endsWith(".json"))
                     .filter(path -> !ACTIVE_FILE_NAME.equals(path.getFileName().toString()))
                     .forEach(path -> {
                         SessionData session = readSession(path);
-                        if (session != null) {
-                            sessions.add(session);
+                        if (session == null || session.id().isBlank()) {
+                            return;
                         }
+                        String idKey = session.id().toLowerCase(Locale.ROOT);
+                        SessionData existing = sessionsById.get(idKey);
+                        if (existing == null || session.updatedAtEpochMilli() >= existing.updatedAtEpochMilli()) {
+                            sessionsById.put(idKey, session);
+                        }
+                        migrateLegacySession(ownerDir, path, session);
                     });
         } catch (IOException exception) {
             MineClawd.LOGGER.warn("Failed to read sessions in {}: {}", ownerDir, exception.getMessage());
         }
-        return sessions;
+        return new ArrayList<>(sessionsById.values());
     }
 
     private SessionData readSession(Path path) {
+        if (path == null || !Files.isRegularFile(path)) {
+            return null;
+        }
         try {
             String content = Files.readString(path, StandardCharsets.UTF_8);
             JsonObject root = JsonParser.parseString(content).getAsJsonObject();
             String id = stringValue(root, "id");
             if (id.isBlank()) {
-                id = path.getFileName().toString().replace(".json", "");
+                String name = path.getFileName().toString();
+                if (CONVERSATION_FILE_NAME.equalsIgnoreCase(name) && path.getParent() != null) {
+                    id = path.getParent().getFileName().toString();
+                } else {
+                    id = name.replace(".json", "");
+                }
             }
             String title = normalizeTitle(stringValue(root, "title"));
             String titleSlug = buildTitleSlug(title);
@@ -298,7 +353,9 @@ public final class SessionManager {
     }
 
     private void writeSession(Path ownerDir, SessionData session) {
-        Path path = ownerDir.resolve(session.id() + ".json");
+        Path path = conversationPath(ownerDir, session.id());
+        ensureDirectory(path.getParent());
+        ensureDirectory(path.getParent().resolve(WORKSPACE_DIR_NAME));
         JsonObject root = new JsonObject();
         root.addProperty("id", session.id());
         root.addProperty("title", normalizeTitle(session.title()));
@@ -319,6 +376,62 @@ public final class SessionManager {
             );
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to write session file: " + path, exception);
+        }
+    }
+
+    private Path sessionDirectory(Path ownerDir, String sessionId) {
+        String normalizedId = sessionId == null ? "" : sessionId.trim().toLowerCase(Locale.ROOT);
+        if (normalizedId.isBlank()) {
+            return ownerDir.resolve("unknown");
+        }
+        return ownerDir.resolve(normalizedId);
+    }
+
+    private Path conversationPath(Path ownerDir, String sessionId) {
+        return sessionDirectory(ownerDir, sessionId).resolve(CONVERSATION_FILE_NAME);
+    }
+
+    private Path legacySessionPath(Path ownerDir, String sessionId) {
+        String normalizedId = sessionId == null ? "" : sessionId.trim().toLowerCase(Locale.ROOT);
+        return ownerDir.resolve(normalizedId + ".json");
+    }
+
+    private void migrateLegacySession(Path ownerDir, Path legacyPath, SessionData session) {
+        if (ownerDir == null || legacyPath == null || session == null) {
+            return;
+        }
+        if (!Files.isRegularFile(legacyPath)) {
+            return;
+        }
+        String fileName = legacyPath.getFileName() == null ? "" : legacyPath.getFileName().toString();
+        if (!fileName.endsWith(".json") || ACTIVE_FILE_NAME.equals(fileName) || CONVERSATION_FILE_NAME.equals(fileName)) {
+            return;
+        }
+        Path target = conversationPath(ownerDir, session.id());
+        try {
+            ensureDirectory(target.getParent());
+            ensureDirectory(target.getParent().resolve(WORKSPACE_DIR_NAME));
+            if (!Files.isRegularFile(target)) {
+                writeSession(ownerDir, session);
+            }
+            if (!target.equals(legacyPath)) {
+                Files.deleteIfExists(legacyPath);
+            }
+        } catch (Exception exception) {
+            MineClawd.LOGGER.warn("Failed to migrate legacy session {}: {}", legacyPath, exception.getMessage());
+        }
+    }
+
+    private void deleteDirectoryRecursively(Path root) throws IOException {
+        if (root == null || !Files.exists(root)) {
+            return;
+        }
+        List<Path> paths;
+        try (var stream = Files.walk(root)) {
+            paths = stream.sorted(Comparator.reverseOrder()).toList();
+        }
+        for (Path path : paths) {
+            Files.deleteIfExists(path);
         }
     }
 
@@ -374,6 +487,17 @@ public final class SessionManager {
             JsonObject message = element.getAsJsonObject();
             String role = stringValue(message, "role");
             String content = nullableStringValue(message, "content");
+            List<JsonObject> contentParts = new ArrayList<>();
+            if (message.has("content") && message.get("content").isJsonArray()) {
+                for (JsonElement partElement : message.getAsJsonArray("content")) {
+                    if (partElement != null && partElement.isJsonObject()) {
+                        contentParts.add(partElement.getAsJsonObject().deepCopy());
+                    }
+                }
+                if ((content == null || content.isBlank()) && !contentParts.isEmpty()) {
+                    content = extractOpenAiTextFromParts(contentParts);
+                }
+            }
             String toolCallId = nullableStringValue(message, "toolCallId");
             List<OpenAIToolCall> toolCalls = new ArrayList<>();
             if (message.has("toolCalls") && message.get("toolCalls").isJsonArray()) {
@@ -389,7 +513,13 @@ public final class SessionManager {
                     ));
                 }
             }
-            messages.add(new OpenAIMessage(role, content, toolCalls.isEmpty() ? null : toolCalls, toolCallId));
+            messages.add(new OpenAIMessage(
+                    role,
+                    content,
+                    contentParts.isEmpty() ? null : contentParts,
+                    toolCalls.isEmpty() ? null : toolCalls,
+                    toolCallId
+            ));
         }
         return messages;
     }
@@ -405,7 +535,15 @@ public final class SessionManager {
             }
             JsonObject object = new JsonObject();
             object.addProperty("role", message.role());
-            if (message.content() == null) {
+            if (message.contentParts() != null && !message.contentParts().isEmpty()) {
+                JsonArray contentArray = new JsonArray();
+                for (JsonObject part : message.contentParts()) {
+                    if (part != null) {
+                        contentArray.add(part.deepCopy());
+                    }
+                }
+                object.add("content", contentArray);
+            } else if (message.content() == null) {
                 object.add("content", null);
             } else {
                 object.addProperty("content", message.content());
@@ -430,6 +568,35 @@ public final class SessionManager {
             array.add(object);
         }
         return array;
+    }
+
+    private String extractOpenAiTextFromParts(List<JsonObject> parts) {
+        if (parts == null || parts.isEmpty()) {
+            return "";
+        }
+        StringBuilder text = new StringBuilder();
+        for (JsonObject part : parts) {
+            if (part == null) {
+                continue;
+            }
+            String type = stringValue(part, "type").toLowerCase(Locale.ROOT);
+            if (!type.isBlank() && !"text".equals(type)) {
+                continue;
+            }
+            String value = stringValue(part, "text");
+            if (value.isBlank() && part.has("text") && part.get("text").isJsonObject()) {
+                JsonObject textObject = part.getAsJsonObject("text");
+                value = stringValue(textObject, "value");
+            }
+            if (value.isBlank()) {
+                continue;
+            }
+            if (text.length() > 0) {
+                text.append('\n');
+            }
+            text.append(value.trim());
+        }
+        return text.toString().trim();
     }
 
     private List<VertexAIMessage> readVertexHistory(JsonObject root) {
