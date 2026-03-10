@@ -7,7 +7,7 @@ modId="mineclawd"
 version="${version}"
 displayName="MineClawd"
 description='''Bring OpenClaw into Minecraft! The Minecraft Agent that actually do things.'''
-displayURL="https://github.com/Zhou-Shilin/MineClawd"
+displayURL="https://github.com/Zaiyuyou/MineClawd"
 logoFile="assets/mineclawd/icon.png"
 
 [[dependencies.mineclawd]]
@@ -21,5 +21,12 @@ side="BOTH"
 modId="minecraft"
 type="required"
 versionRange="[1.21.1,1.22)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.mineclawd]]
+modId="kubejsoffline"
+type="required"
+versionRange="[4.0.0,)"
 ordering="NONE"
 side="BOTH"
