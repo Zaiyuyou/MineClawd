@@ -13,3 +13,6 @@ rootProject.name = 'mineclawd'
 include('common')
 include('neoforge')
 // include('fabric') // waiting for KubeJS 1.21.1 Fabric support
+
+// Include KubeJSOffline project
+includeBuild('../kubejsoffline')

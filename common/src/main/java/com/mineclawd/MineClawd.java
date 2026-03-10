@@ -31,6 +31,8 @@ import com.mineclawd.llm.VertexAIToolCall;
 import com.mineclawd.mod.ModDocsToolExecutor;
 import com.mineclawd.persona.PersonaManager;
 import com.mineclawd.persona.PersonaManager.Persona;
+import com.mineclawd.agent.AgentManager;
+import com.mineclawd.agent.AgentManager.Agent;
 import com.mineclawd.player.PlayerSettingsManager;
 import com.mineclawd.player.PlayerSettingsManager.RequestBroadcastTarget;
 import com.mineclawd.question.QuestionPromptPayload;
@@ -115,6 +117,7 @@ public class MineClawd {
     private static final SessionManager SESSION_MANAGER = new SessionManager();
     private static final AssetsManager ASSETS_MANAGER = new AssetsManager();
     private static final PersonaManager PERSONA_MANAGER = new PersonaManager();
+    private static final AgentManager AGENT_MANAGER = new AgentManager();
     private static final PlayerSettingsManager PLAYER_SETTINGS = new PlayerSettingsManager();
     private static final ConcurrentHashMap<String, String> ACTIVE_REQUESTS = new ConcurrentHashMap<>();
     private static final Set<String> CANCELLED_REQUEST_IDS = ConcurrentHashMap.newKeySet();
@@ -5393,9 +5396,9 @@ public class MineClawd {
             history.add(0, OpenAIMessage.system(systemPrompt));
             return;
         }
-        if (first.content() == null || !first.content().equals(systemPrompt)) {
-            history.set(0, OpenAIMessage.system(systemPrompt));
-        }
+        // 强制更新系统提示词以确保外部prompt修改能够生效
+        // 不再检查内容是否相同，直接更新
+        history.set(0, OpenAIMessage.system(systemPrompt));
     }
 
     private void ensureVertexHistory(List<VertexAIMessage> history, String systemPrompt) {
@@ -5408,15 +5411,9 @@ public class MineClawd {
             history.add(0, VertexAIMessage.user(systemPrompt));
             return;
         }
-        JsonObject firstPart = first.parts().get(0);
-        if (firstPart == null || !firstPart.has("text")) {
-            history.add(0, VertexAIMessage.user(systemPrompt));
-            return;
-        }
-        String existing = firstPart.get("text").getAsString();
-        if (!systemPrompt.equals(existing)) {
-            history.set(0, VertexAIMessage.user(systemPrompt));
-        }
+        // 强制更新系统提示词以确保外部prompt修改能够生效
+        // 不再检查内容是否相同，直接更新
+        history.set(0, VertexAIMessage.user(systemPrompt));
     }
 
     private boolean normalizeVertexFunctionCallTurns(List<VertexAIMessage> history, AgentRuntime runtime) {
@@ -5529,10 +5526,13 @@ public class MineClawd {
             SessionData session
     ) {
         String configured = config == null ? "" : config.systemPrompt;
-        String basePrompt = configured == null || configured.isBlank()
-                ? BASE_SYSTEM_PROMPT
-                : configured.trim();
+        Agent agent = AGENT_MANAGER.loadActiveAgent(ownerKey);
         Persona persona = PERSONA_MANAGER.loadActivePersona(ownerKey);
+        
+        // 使用AgentManager中的prompt，如果为空则使用硬编码的默认值
+        String basePrompt = configured == null || configured.isBlank()
+                ? (agent.hasBasePrompt() ? agent.basePrompt() : BASE_SYSTEM_PROMPT)
+                : configured.trim();
         Path serverRoot = WorkspaceFileToolExecutor.serverRoot(source);
         if (serverRoot == null) {
             serverRoot = Platform.getGameFolder().toAbsolutePath().normalize();
@@ -5597,12 +5597,21 @@ public class MineClawd {
                     .append("Most-used path: server-scripts = ").append(serverScriptsToolPath).append("\n")
                     .append("Session workspace path becomes available on session-backed requests.");
         }
-        if (dynamicRegistryEnabled) {
+        if (dynamicRegistryEnabled && agent.hasDynamicRegistryPrompt()) {
+            prompt.append("\n\n")
+                    .append(agent.dynamicRegistryPrompt());
+        } else if (dynamicRegistryEnabled) {
             prompt.append("\n\n")
                     .append(DYNAMIC_REGISTRY_PROMPT_APPENDIX);
         }
-        prompt.append("\n\n")
-                .append(ASSET_TRACKING_PROMPT_APPENDIX);
+        
+        if (agent.hasAssetTrackingPrompt()) {
+            prompt.append("\n\n")
+                    .append(agent.assetTrackingPrompt());
+        } else {
+            prompt.append("\n\n")
+                    .append(ASSET_TRACKING_PROMPT_APPENDIX);
+        }
         return prompt.toString();
     }
 
