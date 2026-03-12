@@ -30,6 +30,8 @@ dependencies {
     modCompileOnly "maven.modrinth:better-modlist:${rootProject.better_modlist_neoforge_version}"
     modCompileOnly "dev.latvian.mods:kubejs-neoforge:${rootProject.kubejs_neoforge_version}"
     modCompileOnly "dev.latvian.mods:rhino:${rootProject.rhino_neoforge_version}"
+    
+    modRuntimeOnly fileTree(dir: '../libs', include: ['kubejsoffline-*.jar'])
 
     forgeRuntimeLibrary "org.quiltmc.parsers:gson:0.2.1"
     forgeRuntimeLibrary "org.quiltmc.parsers:json:0.2.1"
