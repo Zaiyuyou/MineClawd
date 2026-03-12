@@ -19,6 +19,9 @@ dependencies {
     modCompileOnly "dev.isxander:yet-another-config-lib:${rootProject.yacl_fabric_version}"
     modCompileOnly "dev.latvian.mods:kubejs-neoforge:${rootProject.kubejs_neoforge_version}"
     modCompileOnly "dev.latvian.mods:rhino:${rootProject.rhino_neoforge_version}"
+    
+    // 直接引用本地KubeJSOffline jar文件
+    modCompileOnly fileTree(dir: '../libs', include: ['kubejsoffline-*.jar'])
 
     implementation "de.themoep:minedown-adventure:${rootProject.minedown_version}"
 

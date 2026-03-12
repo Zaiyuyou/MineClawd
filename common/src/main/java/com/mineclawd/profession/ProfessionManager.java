@@ -1,4 +1,4 @@
-package com.mineclawd.agent;
+package com.mineclawd.profession;
 
 import com.mineclawd.MineClawd;
 import dev.architectury.platform.Platform;
@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-public final class AgentManager {
+public final class ProfessionManager {
     public static final String DEFAULT_AGENT = "default";
     private static final String FILE_EXTENSION = ".md";
     private static final Pattern OWNER_SANITIZE = Pattern.compile("[^a-zA-Z0-9._-]");
@@ -24,40 +24,40 @@ public final class AgentManager {
     public static final String PROMPT_TYPE_DYNAMIC_REGISTRY = "dynamic_registry";
     public static final String PROMPT_TYPE_ASSET_TRACKING = "asset_tracking";
     
-    private final Path agentsRoot;
+    private final Path professionsRoot;
     private final Path activeRoot;
 
-    public AgentManager() {
+    public ProfessionManager() {
         Path mineclawdRoot = Platform.getGameFolder().resolve("mineclawd");
-        this.agentsRoot = mineclawdRoot.resolve("agents");
-        this.activeRoot = agentsRoot.resolve(".active");
-        ensureDirectory(agentsRoot);
+        this.professionsRoot = mineclawdRoot.resolve("professions");
+        this.activeRoot = professionsRoot.resolve(".active");
+        ensureDirectory(professionsRoot);
         ensureDirectory(activeRoot);
-        ensureBundledAgents();
+        ensureBundledProfessions();
     }
 
-    public synchronized List<String> listAgentNames() {
-        ensureBundledAgents();
+    public synchronized List<String> listProfessionNames() {
+        ensureBundledProfessions();
         List<String> names = new ArrayList<>();
-        try (var stream = Files.list(agentsRoot)) {
+        try (var stream = Files.list(professionsRoot)) {
             stream.filter(Files::isDirectory)
                     .map(path -> path.getFileName().toString())
                     .filter(name -> !name.startsWith("."))
                     .filter(name -> !name.isBlank())
                     .forEach(names::add);
         } catch (IOException exception) {
-            MineClawd.LOGGER.warn("Failed to list agents in {}: {}", agentsRoot, exception.getMessage());
+            MineClawd.LOGGER.warn("Failed to list professions in {}: {}", professionsRoot, exception.getMessage());
         }
         names.sort(String.CASE_INSENSITIVE_ORDER);
         return names;
     }
 
-    public synchronized String resolveAgentName(String reference) {
+    public synchronized String resolveProfessionName(String reference) {
         if (reference == null || reference.isBlank()) {
             return null;
         }
         String wanted = reference.trim().toLowerCase(Locale.ROOT);
-        for (String name : listAgentNames()) {
+        for (String name : listProfessionNames()) {
             if (name.toLowerCase(Locale.ROOT).equals(wanted)) {
                 return name;
             }
@@ -65,69 +65,69 @@ public final class AgentManager {
         return null;
     }
 
-    public synchronized Agent loadActiveAgent(String ownerKey) {
-        String agentName = getActiveAgentName(ownerKey);
-        String basePrompt = readAgentPromptContent(agentName, PROMPT_TYPE_BASE);
-        String dynamicRegistryPrompt = readAgentPromptContent(agentName, PROMPT_TYPE_DYNAMIC_REGISTRY);
-        String assetTrackingPrompt = readAgentPromptContent(agentName, PROMPT_TYPE_ASSET_TRACKING);
+    public synchronized Profession loadActiveProfession(String ownerKey) {
+        String professionName = getActiveProfessionName(ownerKey);
+        String basePrompt = readProfessionPromptContent(professionName, PROMPT_TYPE_BASE);
+        String dynamicRegistryPrompt = readProfessionPromptContent(professionName, PROMPT_TYPE_DYNAMIC_REGISTRY);
+        String assetTrackingPrompt = readProfessionPromptContent(professionName, PROMPT_TYPE_ASSET_TRACKING);
         
-        return new Agent(agentName, basePrompt, dynamicRegistryPrompt, assetTrackingPrompt);
+        return new Profession(professionName, basePrompt, dynamicRegistryPrompt, assetTrackingPrompt);
     }
 
-    public synchronized String getActiveAgentName(String ownerKey) {
-        ensureBundledAgents();
-        String selected = readSelectedAgent(ownerKey);
-        String resolved = resolveAgentName(selected);
+    public synchronized String getActiveProfessionName(String ownerKey) {
+        ensureBundledProfessions();
+        String selected = readSelectedProfession(ownerKey);
+        String resolved = resolveProfessionName(selected);
         if (resolved != null) {
             return resolved;
         }
         return DEFAULT_AGENT;
     }
 
-    public synchronized boolean setActiveAgent(String ownerKey, String agentReference) {
-        String resolved = resolveAgentName(agentReference);
+    public synchronized boolean setActiveProfession(String ownerKey, String professionReference) {
+        String resolved = resolveProfessionName(professionReference);
         if (resolved == null) {
             return false;
         }
-        writeSelectedAgent(ownerKey, resolved);
+        writeSelectedProfession(ownerKey, resolved);
         return true;
     }
 
-    public synchronized String readAgentPromptContent(String agentName, String promptType) {
-        String resolved = resolveAgentName(agentName);
+    public synchronized String readProfessionPromptContent(String professionName, String promptType) {
+        String resolved = resolveProfessionName(professionName);
         if (resolved == null) {
             return null;
         }
-        Path path = agentsRoot.resolve(resolved).resolve(promptType + FILE_EXTENSION);
+        Path path = professionsRoot.resolve(resolved).resolve(promptType + FILE_EXTENSION);
         if (!Files.isRegularFile(path)) {
             return ""; // 返回空字符串而不是null，确保不影响对话功能
         }
         try {
             return Files.readString(path, StandardCharsets.UTF_8);
         } catch (IOException exception) {
-            MineClawd.LOGGER.warn("Failed to read agent prompt {}: {}", path, exception.getMessage());
+            MineClawd.LOGGER.warn("Failed to read profession prompt {}: {}", path, exception.getMessage());
             return "";
         }
     }
 
-    private void ensureBundledAgents() {
-        ensureDefaultAgent();
+    private void ensureBundledProfessions() {
+        ensureDefaultProfession();
     }
 
-    private void ensureDefaultAgent() {
-        Path defaultAgentDir = agentsRoot.resolve(DEFAULT_AGENT);
-        ensureDirectory(defaultAgentDir);
+    private void ensureDefaultProfession() {
+        Path defaultProfessionDir = professionsRoot.resolve(DEFAULT_AGENT);
+        ensureDirectory(defaultProfessionDir);
         
-        // 创建包含硬编码prompt的默认agent配置
-        ensureFileIfMissing(defaultAgentDir.resolve(PROMPT_TYPE_BASE + FILE_EXTENSION), getDefaultBasePrompt());
-        ensureFileIfMissing(defaultAgentDir.resolve(PROMPT_TYPE_DYNAMIC_REGISTRY + FILE_EXTENSION), getDefaultDynamicRegistryPrompt());
-        ensureFileIfMissing(defaultAgentDir.resolve(PROMPT_TYPE_ASSET_TRACKING + FILE_EXTENSION), getDefaultAssetTrackingPrompt());
+        // 创建包含硬编码prompt的默认profession配置
+        ensureFileIfMissing(defaultProfessionDir.resolve(PROMPT_TYPE_BASE + FILE_EXTENSION), getDefaultBasePrompt());
+        ensureFileIfMissing(defaultProfessionDir.resolve(PROMPT_TYPE_DYNAMIC_REGISTRY + FILE_EXTENSION), getDefaultDynamicRegistryPrompt());
+        ensureFileIfMissing(defaultProfessionDir.resolve(PROMPT_TYPE_ASSET_TRACKING + FILE_EXTENSION), getDefaultAssetTrackingPrompt());
     }
     
     private String getDefaultBasePrompt() {
         return String.join("\n",
              // ── 1. IDENTITY ──────────────────────────────────────────────────────────
-        "You are MineClawd, an advanced Minecraft in-game agent specialized in KubeJS scripting",
+        "You are MineClawd, an advanced Minecraft in-game profession specialized in KubeJS scripting",
         "for Minecraft 1.20.1 and 1.21.1.",
         "Project identity is always MineClawd. Persona files may define another character name or",
         "voice — follow that persona style, but keep project/tool identity and command names unchanged.",
@@ -145,8 +145,24 @@ public final class AgentManager {
         "  In your first assistant message, explain your immediate plan concisely.",
         "",
         "STEP 3 — VERIFY BEFORE CODING",
-        "  When KubeJS syntax, mod command usage, or config keys are uncertain, first look them up",
-        "  via `fetch_modrinth`, `fetch_url`, or `search`. Do not guess or hallucinate APIs.",
+        "  When KubeJS syntax, mod command usage, or config keys are uncertain, follow this priority:",
+        "",
+        "  *** KUBEJSOFFLINE KNOWLEDGE BASE WORKFLOW ***",
+        "  1. KUBEJSOFFLINE KNOWLEDGE BASE (FIRST PRIORITY)",
+        "     - Use `kubejsoffline-query-class` to query class information",
+        "     - Use `kubejsoffline-query-event` to query event information",
+        "     - If knowledge base not available, use `kubejsoffline-generate-kb` to generate it",
+        "",
+        "  2. OFFICIAL KUBEJS WIKI (SECOND PRIORITY)",
+        "     - Use `fetch_url` to access https://kubejs.com/wiki/",
+        "",
+        "  3. MODRINTH DOCUMENTATION (THIRD PRIORITY)",
+        "     - Use `fetch_modrinth` for mod-specific documentation",
+        "",
+        "  4. WEB SEARCH (LAST RESORT)",
+        "     - Use `search` only for specific issues not covered above",
+        "",
+        "  Do not guess or hallucinate APIs.",
         "",
         "STEP 4 — EXECUTE WITH PROGRESS UPDATES",
         "  Send a short progress update to the player before each tool call.",
@@ -171,11 +187,19 @@ public final class AgentManager {
         "  `ask-user-question`  Ask the player a targeted question when details are ambiguous.",
         "    Provide a concise `question` and up to 5 preset `options`.",
         "    Do NOT include 'Other' or 'Skip' in options; MineClawd appends them automatically.",
+        "  `kubejsoffline-query-class` Query KubeJS class information from KubeJSOffline knowledge base",
+        "    Use this as the primary source for accurate, version-specific API information",
+        "  `kubejsoffline-query-event` Query KubeJS event information from KubeJSOffline knowledge base",
+        "    Use for event handlers, event properties, and event-specific methods",
+        "  `kubejsoffline-generate-kb` Generate KubeJSOffline knowledge base if not available",
+        "    Automatically generates structured JSON documentation from installed mods",
+        "  `kubejsoffline-debug-info` Get KubeJSOffline status and debug information",
+        "    Check if KubeJSOffline is available and documentation is generated",
         "  `list_commands`      List available root commands, optionally filtered by `mod_id`.",
         "    Filtered matching is best-effort based on command names and prefixes.",
         "  `fetch_modrinth`     Fetch the Modrinth project page for an installed mod id. You can possibly find command usage, config keys, or API details in mod documentation or source code linked there.",
         "  `fetch_url`          Fetch any HTTP(S) page; HTML is returned as Markdown.",
-        "    Use for command usage, config keys, API details, or mod documentation.",
+        "    Use for KubeJS Wiki, command usage, config keys, API details, or mod documentation.",
         "  `search`             Web search via Tavily (available only when configured).",
         "    Use when external references are needed beyond installed-mod docs.",
         "  `list-files`         List files/directories (optional path + recursion).",
@@ -249,30 +273,48 @@ public final class AgentManager {
         "",
         "*** IMPORTANT: Always verify KubeJS syntax compatibility with the current game version ***",
         "",
-        "1. VERSION-SPECIFIC SYNTAX:",
-        "   - KubeJS API changes significantly between Minecraft versions",
-        "   - Always check the official KubeJS Wiki for version-specific syntax",
-        "   - Use `fetch_url` to access: https://kubejs.com/wiki/",
-        "   - Search for API documentation matching the current game version",
+        "*** KUBEJSOFFLINE INTEGRATION WORKFLOW ***",
         "",
-        "2. EVENT SYSTEM EVOLUTION:",
-        "   - Modern versions use ServerEvents, PlayerEvents, LevelEvents, etc.",
-        "   - Legacy `onEvent` syntax may be deprecated or removed",
-        "   - Always reference the official documentation for current best practices",
+        "1. KUBEJS CODE GENERATION WORKFLOW (MUST FOLLOW THIS EXACT SEQUENCE):",
+        "   STEP 1: Check KubeJSOffline availability (use `kubejsoffline-debug-info`)",
+        "   STEP 2: If knowledge base not available, generate it (use `kubejsoffline-generate-kb`)",
+        "   STEP 3: Query relevant API information from knowledge base",
+        "   STEP 4: Generate code based on verified API information",
+        "   STEP 5: Verify generated code against knowledge base",
+        "   STEP 6: If verification fails, fallback to KubeJS Wiki",
         "",
-        "3. API VERIFICATION WORKFLOW:",
-        "   - Before writing any KubeJS code, first check the official Wiki",
-        "   - Verify that the API methods you plan to use exist in the current version",
-        "   - Look for version-specific examples and migration guides",
-        "   - Pay attention to deprecated methods and their replacements",
+        "2. KUBEJSOFFLINE KNOWLEDGE BASE (FIRST PRIORITY):",
+        "   - Use KubeJSOffline-generated knowledge base as the primary source",
+        "   - KubeJSOffline provides real-time, version-specific API information",
+        "   - Automatically generates structured JSON knowledge from installed mods",
+        "   - Contains the most accurate and up-to-date API references",
+        "   - MineClawd automatically caches and indexes the generated knowledge",
         "",
-        "4. VERSION COMPATIBILITY CHECKLIST:",
-        "   - Minecraft version: 1.21.1",
-        "   - KubeJS version: check installed mod version",
-        "   - API changes: always verify against official documentation",
-        "   - Breaking changes: be aware of major version updates",
+        "3. QUERY PRIORITY (MUST FOLLOW THIS ORDER):",
+        "   FIRST: Check KubeJSOffline knowledge base (most accurate)",
+        "   SECOND: Search official KubeJS Wiki (https://kubejs.com/wiki/)",
+        "   THIRD: Use web search for specific issues (last resort)",
+        "   NEVER: Rely on memorized examples or outdated syntax",
         "",
-        "*** DO NOT RELY ON MEMORIZED EXAMPLES - ALWAYS VERIFY WITH OFFICIAL DOCUMENTATION ***",
+        "4. POST-GENERATION VERIFICATION:",
+        "   After generating KubeJS code, ALWAYS perform post-generation verification:",
+        "   - Check generated code against KubeJSOffline knowledge base",
+        "   - Verify syntax and patterns are up-to-date",
+        "   - Ensure no outdated or deprecated API usage",
+        "   - If KubeJSOffline is unavailable, clearly state this limitation",
+        "",
+        "5. DYNAMIC API DISCOVERY:",
+        "   - KubeJSOffline scans all installed mods for KubeJS bindings",
+        "   - Provides real-time discovery of available events and utilities",
+        "   - Automatically detects API changes when mods are updated",
+        "   - Generates structured documentation with method signatures and examples",
+        "",
+        "6. ERROR PREVENTION:",
+        "   - Always generate code based on verified API information",
+        "   - Never generate code that might use deprecated or non-existent APIs",
+        "   - When in doubt, ask the user to install KubeJSOffline for accurate information",
+        "",
+        "*** DO NOT RELY ON MEMORIZED EXAMPLES - ALWAYS USE VERIFIED API INFORMATION ***",
         "",
 
         // ── 7. CONSTRAINTS & LIMITS ───────────────────────────────────────────────
@@ -366,11 +408,11 @@ public final class AgentManager {
                     StandardOpenOption.WRITE
             );
         } catch (IOException exception) {
-            MineClawd.LOGGER.warn("Failed to create agent file {}: {}", target, exception.getMessage());
+            MineClawd.LOGGER.warn("Failed to create profession file {}: {}", target, exception.getMessage());
         }
     }
 
-    private String readSelectedAgent(String ownerKey) {
+    private String readSelectedProfession(String ownerKey) {
         Path path = activeRoot.resolve(safeOwner(ownerKey) + ".txt");
         if (!Files.isRegularFile(path)) {
             return DEFAULT_AGENT;
@@ -378,24 +420,24 @@ public final class AgentManager {
         try {
             return Files.readString(path, StandardCharsets.UTF_8).trim();
         } catch (IOException exception) {
-            MineClawd.LOGGER.warn("Failed to read active agent {}: {}", path, exception.getMessage());
+            MineClawd.LOGGER.warn("Failed to read active profession {}: {}", path, exception.getMessage());
             return DEFAULT_AGENT;
         }
     }
 
-    private void writeSelectedAgent(String ownerKey, String agentName) {
+    private void writeSelectedProfession(String ownerKey, String professionName) {
         Path path = activeRoot.resolve(safeOwner(ownerKey) + ".txt");
         try {
             Files.writeString(
                     path,
-                    agentName + System.lineSeparator(),
+                    professionName + System.lineSeparator(),
                     StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.WRITE
             );
         } catch (IOException exception) {
-            throw new IllegalStateException("Failed to persist active agent: " + path, exception);
+            throw new IllegalStateException("Failed to persist active profession: " + path, exception);
         }
     }
 
@@ -403,7 +445,7 @@ public final class AgentManager {
         try {
             Files.createDirectories(path);
         } catch (IOException exception) {
-            throw new IllegalStateException("Unable to create agent directory: " + path, exception);
+            throw new IllegalStateException("Unable to create profession directory: " + path, exception);
         }
     }
 
@@ -412,7 +454,7 @@ public final class AgentManager {
         return OWNER_SANITIZE.matcher(value).replaceAll("_");
     }
 
-    public record Agent(String name, String basePrompt, String dynamicRegistryPrompt, String assetTrackingPrompt) {
+    public record Profession(String name, String basePrompt, String dynamicRegistryPrompt, String assetTrackingPrompt) {
         public boolean hasBasePrompt() {
             return basePrompt != null && !basePrompt.isBlank();
         }

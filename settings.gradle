@@ -12,7 +12,10 @@ rootProject.name = 'mineclawd'
 
 include('common')
 include('neoforge')
-// include('fabric') // waiting for KubeJS 1.21.1 Fabric support
 
-// Include KubeJSOffline project
-includeBuild('../kubejsoffline')
+def kubeJSOfflineJar = file('libs/kubejsoffline-neoforge-5.2.0.jar')
+if (kubeJSOfflineJar.exists()) {
+    println "USE EXISTING JAR: ${kubeJSOfflineJar}"
+} else {
+    println "WARNING: KubeJSOffline JAR not found at ${kubeJSOfflineJar}, please ensure the jar is placed in the libs folder"
+}
