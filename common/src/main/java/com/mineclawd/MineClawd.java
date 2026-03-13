@@ -31,8 +31,8 @@ import com.mineclawd.llm.VertexAIToolCall;
 import com.mineclawd.mod.ModDocsToolExecutor;
 import com.mineclawd.persona.PersonaManager;
 import com.mineclawd.persona.PersonaManager.Persona;
-import com.mineclawd.profession.ProfessionManager;
-import com.mineclawd.profession.ProfessionManager.Profession;
+import com.mineclawd.agent.AgentManager;
+import com.mineclawd.agent.AgentManager.Agent;
 import com.mineclawd.player.PlayerSettingsManager;
 import com.mineclawd.player.PlayerSettingsManager.RequestBroadcastTarget;
 import com.mineclawd.question.QuestionPromptPayload;
@@ -117,7 +117,7 @@ public class MineClawd {
     private static final SessionManager SESSION_MANAGER = new SessionManager();
     private static final AssetsManager ASSETS_MANAGER = new AssetsManager();
     private static final PersonaManager PERSONA_MANAGER = new PersonaManager();
-    private static final ProfessionManager PROFESSION_MANAGER = new ProfessionManager();
+    private static final AgentManager AGENT_MANAGER = new AgentManager();
     private static final PlayerSettingsManager PLAYER_SETTINGS = new PlayerSettingsManager();
     private static final ConcurrentHashMap<String, String> ACTIVE_REQUESTS = new ConcurrentHashMap<>();
     private static final Set<String> CANCELLED_REQUEST_IDS = ConcurrentHashMap.newKeySet();
@@ -158,7 +158,10 @@ public class MineClawd {
     private static final String TOOL_LIST_ASSETS = "list-assets";
     private static final String TOOL_UPSERT_ASSET_RECORD = "upsert-asset-record";
     private static final String TOOL_REMOVE_ASSET_RECORD = "remove-asset-record";
-    private static final String LEGACY_TOOL_KUBEJS_EVAL = "kubejs_eval";
+    private static final String TOOL_LEGACY_KUBEJS_EVAL = "kubejs_eval";
+    private static final String TOOL_KUBEJSOFFLINE_QUERY_CLASS = "kubejsoffline-query-class";
+    private static final String TOOL_KUBEJSOFFLINE_QUERY_EVENT = "kubejsoffline-query-event";
+    private static final String TOOL_KUBEJSOFFLINE_GENERATE_KB = "kubejsoffline-generate-kb";
     private static final int TOOL_LIMIT_MIN = 1;
     private static final int TOOL_LIMIT_MAX = 20;
     private static final int MAX_REPEAT_TOOL_CALLS = 1;
@@ -415,59 +418,6 @@ public class MineClawd {
         "  - Do not leave temporary test blocks, entities, or commands in the world;",
         "    clean up immediately after validation.",
         "  - If unsure whether a change is safe, ask the player before applying it."
-    );
-
-    private static final String DYNAMIC_REGISTRY_PROMPT_APPENDIX = String.join("\n",
-
-        // ── DYNAMIC REGISTRY ──────────────────────────────────────────────────────
-        "*** DYNAMIC REGISTRY (RUNTIME PLACEHOLDER MODE) ***",
-        "True startup registration is still impossible in-session, but you can pseudo-register",
-        "content by configuring pre-registered placeholders.",
-        "",
-        "Tools:",
-        "  `list-dynamic-content`    Inspect used and free slots for items/blocks/fluids.",
-        "  `register-dynamic-item`   Claim a free item slot.",
-        "    Params: name, material_item (vanilla item id), throwable.",
-        "  `register-dynamic-block`  Claim a free block slot.",
-        "    Params: name, material_block (vanilla block id), friction.",
-        "  `register-dynamic-fluid`  Claim a free fluid slot.",
-        "    Params: name, material_fluid (vanilla fluid id), color (#RRGGBB, optional).",
-        "  `update-dynamic-item`     Update an existing item slot (requires slot).",
-        "  `update-dynamic-block`    Update an existing block slot (requires slot).",
-        "  `update-dynamic-fluid`    Update an existing fluid slot (requires slot).",
-        "  `unregister-dynamic-content`  Release a slot by type + slot.",
-        "",
-        "Rules:",
-        "  1. If the user does not specify a slot, call register tools without `slot` to auto-pick.",
-        "  2. Registered placeholders appear in creative tabs; unregistered slots stay hidden.",
-        "  3. Placeholder IDs are fixed: mineclawd:dynamic_item_001, _block_001, _fluid_001, etc.",
-        "  4. For material_* params, pick a semantically related vanilla ID; avoid unrelated defaults.",
-        "  5. After each register/update, verify real in-game state before claiming success.",
-        "  6. Clean up any temporary validation setups (test blocks, entities) immediately.",
-        "  7. For behavior beyond provided properties, combine with KubeJS scripts."
-    );
-
-    private static final String ASSET_TRACKING_PROMPT_APPENDIX = String.join("\n",
-
-        // ── ASSET TRACKING ────────────────────────────────────────────────────────
-        "*** ASSET TRACKING ***",
-        "Use persistent asset records so future sessions can continue previous work without",
-        "losing references to entities, scripts, commands, or dynamic content.",
-        "",
-        "Tools:",
-        "  `list-assets`         Inspect all currently tracked assets.",
-        "  `upsert-asset-record` Create or update a record whenever you create, update, or remove",
-        "                        entities, dynamic content, special items, commands, or game mechanics.",
-        "  `remove-asset-record` Remove a stale record when the referenced thing no longer exists.",
-        "",
-        "Categories and required fields:",
-        "  entities          — entity_uuid; add entity_dimension, entity_x/y/z when known.",
-        "  items_blocks_fluids — content_id (e.g. mineclawd:dynamic_item_001).",
-        "  special_items     — special_item_id; special_item_nbt if available.",
-        "  commands          — command text; script_path if scripted.",
-        "  game_mechanics    — summary, details, script_path when applicable.",
-        "",
-        "All categories support optional fields: summary, script_path."
     );
 
     public static void init() {
@@ -3167,7 +3117,7 @@ public class MineClawd {
         ToolExecutionResult result;
         switch (toolName) {
             case TOOL_APPLY_INSTANT_SERVER_SCRIPT:
-            case LEGACY_TOOL_KUBEJS_EVAL:
+            case TOOL_LEGACY_KUBEJS_EVAL:
                 String code = readRequiredStringArg(args, "code");
                 if (code == null || code.isBlank()) {
                     return "ERROR: Tool call is missing required string `code`.";
@@ -5526,12 +5476,11 @@ public class MineClawd {
             SessionData session
     ) {
         String configured = config == null ? "" : config.systemPrompt;
-        Profession profession = PROFESSION_MANAGER.loadActiveProfession(ownerKey);
+        Agent agent = AGENT_MANAGER.loadActiveAgent(ownerKey);
         Persona persona = PERSONA_MANAGER.loadActivePersona(ownerKey);
         
-        // 使用ProfessionManager中的prompt，如果为空则使用硬编码的默认值
         String basePrompt = configured == null || configured.isBlank()
-                ? (profession.hasBasePrompt() ? profession.basePrompt() : BASE_SYSTEM_PROMPT)
+                ? (agent.hasBasePrompt() ? agent.basePrompt() : BASE_SYSTEM_PROMPT)
                 : configured.trim();
         Path serverRoot = WorkspaceFileToolExecutor.serverRoot(source);
         if (serverRoot == null) {
@@ -5597,20 +5546,14 @@ public class MineClawd {
                     .append("Most-used path: server-scripts = ").append(serverScriptsToolPath).append("\n")
                     .append("Session workspace path becomes available on session-backed requests.");
         }
-        if (dynamicRegistryEnabled && profession.hasDynamicRegistryPrompt()) {
+        if (dynamicRegistryEnabled && agent.hasDynamicRegistryPrompt()) {
             prompt.append("\n\n")
-                    .append(profession.dynamicRegistryPrompt());
-        } else if (dynamicRegistryEnabled) {
-            prompt.append("\n\n")
-                    .append(DYNAMIC_REGISTRY_PROMPT_APPENDIX);
+                    .append(agent.dynamicRegistryPrompt());
         }
         
-        if (profession.hasAssetTrackingPrompt()) {
+        if (agent.hasAssetTrackingPrompt()) {
             prompt.append("\n\n")
-                    .append(profession.assetTrackingPrompt());
-        } else {
-            prompt.append("\n\n")
-                    .append(ASSET_TRACKING_PROMPT_APPENDIX);
+                    .append(agent.assetTrackingPrompt());
         }
         return prompt.toString();
     }
@@ -5843,7 +5786,7 @@ public class MineClawd {
                 shortText = "Executing command " + summarizeCommandForStatus(command);
                 hoverText = command.isBlank() ? "" : "Command: " + normalizeCommandForHover(command);
             }
-            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, LEGACY_TOOL_KUBEJS_EVAL -> {
+            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, TOOL_LEGACY_KUBEJS_EVAL -> {
                 shortText = "Applying instant script";
                 hoverText = "Executing KubeJS instant script (code hidden).";
             }
@@ -5950,7 +5893,7 @@ public class MineClawd {
                 shortText = "Executed command " + summarizeCommandForStatus(command);
                 hoverText = command.isBlank() ? "" : "Command: " + normalizeCommandForHover(command);
             }
-            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, LEGACY_TOOL_KUBEJS_EVAL -> {
+            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, TOOL_LEGACY_KUBEJS_EVAL -> {
                 shortText = "Applied instant script";
                 hoverText = "Executed KubeJS instant script (code hidden).";
             }
