@@ -13,20 +13,26 @@ public final class AssetsOverlayPayload {
     private final boolean openUi;
     private final String activeSessionId;
     private final String activePersona;
+    private final String activeAgent;
     private final List<String> personas;
+    private final List<String> agents;
     private final List<AssetItem> assets;
 
     public AssetsOverlayPayload(
             boolean openUi,
             String activeSessionId,
             String activePersona,
+            String activeAgent,
             List<String> personas,
+            List<String> agents,
             List<AssetItem> assets
     ) {
         this.openUi = openUi;
         this.activeSessionId = activeSessionId == null ? "" : activeSessionId.trim();
         this.activePersona = activePersona == null ? "" : activePersona.trim();
+        this.activeAgent = activeAgent == null ? "" : activeAgent.trim();
         this.personas = personas == null ? List.of() : List.copyOf(personas);
+        this.agents = agents == null ? List.of() : List.copyOf(agents);
         this.assets = assets == null ? List.of() : List.copyOf(assets);
     }
 
@@ -42,8 +48,16 @@ public final class AssetsOverlayPayload {
         return activePersona;
     }
 
+    public String activeAgent() {
+        return activeAgent;
+    }
+
     public List<String> personas() {
         return Collections.unmodifiableList(personas);
+    }
+
+    public List<String> agents() {
+        return Collections.unmodifiableList(agents);
     }
 
     public List<AssetItem> assets() {
@@ -55,6 +69,7 @@ public final class AssetsOverlayPayload {
         root.addProperty("openUi", openUi);
         root.addProperty("activeSessionId", activeSessionId);
         root.addProperty("activePersona", activePersona);
+        root.addProperty("activeAgent", activeAgent);
 
         JsonArray personasArray = new JsonArray();
         for (String persona : personas) {
@@ -63,6 +78,14 @@ public final class AssetsOverlayPayload {
             }
         }
         root.add("personas", personasArray);
+
+        JsonArray agentsArray = new JsonArray();
+        for (String agent : agents) {
+            if (agent != null && !agent.isBlank()) {
+                agentsArray.add(agent);
+            }
+        }
+        root.add("agents", agentsArray);
 
         JsonArray assetsArray = new JsonArray();
         for (AssetItem item : assets) {
@@ -108,6 +131,7 @@ public final class AssetsOverlayPayload {
             boolean openUi = readBoolean(root, "openUi");
             String activeSessionId = readString(root, "activeSessionId");
             String activePersona = readString(root, "activePersona");
+            String activeAgent = readString(root, "activeAgent");
 
             List<String> personas = new ArrayList<>();
             if (root.has("personas") && root.get("personas").isJsonArray()) {
@@ -118,6 +142,19 @@ public final class AssetsOverlayPayload {
                     String value = element.getAsString();
                     if (!value.isBlank()) {
                         personas.add(value);
+                    }
+                }
+            }
+
+            List<String> agents = new ArrayList<>();
+            if (root.has("agents") && root.get("agents").isJsonArray()) {
+                for (JsonElement element : root.getAsJsonArray("agents")) {
+                    if (element == null || element.isJsonNull()) {
+                        continue;
+                    }
+                    String value = element.getAsString();
+                    if (!value.isBlank()) {
+                        agents.add(value);
                     }
                 }
             }
@@ -155,7 +192,7 @@ public final class AssetsOverlayPayload {
                 }
             }
 
-            return new AssetsOverlayPayload(openUi, activeSessionId, activePersona, personas, assets);
+            return new AssetsOverlayPayload(openUi, activeSessionId, activePersona, activeAgent, personas, agents, assets);
         } catch (Exception ignored) {
             return null;
         }

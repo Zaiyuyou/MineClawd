@@ -13,7 +13,9 @@ public final class SessionOverlayPayload {
     private final boolean openUi;
     private final String activeSessionId;
     private final String activePersona;
+    private final String activeAgent;
     private final List<String> personas;
+    private final List<String> agents;
     private final List<SessionItem> sessions;
     private final List<HistoryItem> history;
 
@@ -21,14 +23,18 @@ public final class SessionOverlayPayload {
             boolean openUi,
             String activeSessionId,
             String activePersona,
+            String activeAgent,
             List<String> personas,
+            List<String> agents,
             List<SessionItem> sessions,
             List<HistoryItem> history
     ) {
         this.openUi = openUi;
         this.activeSessionId = activeSessionId == null ? "" : activeSessionId.trim();
         this.activePersona = activePersona == null ? "" : activePersona.trim();
+        this.activeAgent = activeAgent == null ? "" : activeAgent.trim();
         this.personas = personas == null ? List.of() : List.copyOf(personas);
+        this.agents = agents == null ? List.of() : List.copyOf(agents);
         this.sessions = sessions == null ? List.of() : List.copyOf(sessions);
         this.history = history == null ? List.of() : List.copyOf(history);
     }
@@ -45,8 +51,16 @@ public final class SessionOverlayPayload {
         return activePersona;
     }
 
+    public String activeAgent() {
+        return activeAgent;
+    }
+
     public List<String> personas() {
         return Collections.unmodifiableList(personas);
+    }
+
+    public List<String> agents() {
+        return Collections.unmodifiableList(agents);
     }
 
     public List<SessionItem> sessions() {
@@ -62,6 +76,7 @@ public final class SessionOverlayPayload {
         root.addProperty("openUi", openUi);
         root.addProperty("activeSessionId", activeSessionId);
         root.addProperty("activePersona", activePersona);
+        root.addProperty("activeAgent", activeAgent);
 
         JsonArray personasArray = new JsonArray();
         for (String persona : personas) {
@@ -70,6 +85,14 @@ public final class SessionOverlayPayload {
             }
         }
         root.add("personas", personasArray);
+
+        JsonArray agentsArray = new JsonArray();
+        for (String agent : agents) {
+            if (agent != null && !agent.isBlank()) {
+                agentsArray.add(agent);
+            }
+        }
+        root.add("agents", agentsArray);
 
         JsonArray sessionsArray = new JsonArray();
         for (SessionItem item : sessions) {
@@ -112,6 +135,7 @@ public final class SessionOverlayPayload {
                     && root.get("openUi").getAsBoolean();
             String activeSessionId = readString(root, "activeSessionId");
             String activePersona = readString(root, "activePersona");
+            String activeAgent = readString(root, "activeAgent");
 
             List<String> personas = new ArrayList<>();
             if (root.has("personas") && root.get("personas").isJsonArray()) {
@@ -122,6 +146,19 @@ public final class SessionOverlayPayload {
                     String value = element.getAsString();
                     if (!value.isBlank()) {
                         personas.add(value);
+                    }
+                }
+            }
+
+            List<String> agents = new ArrayList<>();
+            if (root.has("agents") && root.get("agents").isJsonArray()) {
+                for (JsonElement element : root.getAsJsonArray("agents")) {
+                    if (element == null || element.isJsonNull()) {
+                        continue;
+                    }
+                    String value = element.getAsString();
+                    if (!value.isBlank()) {
+                        agents.add(value);
                     }
                 }
             }
@@ -162,7 +199,7 @@ public final class SessionOverlayPayload {
                 }
             }
 
-            return new SessionOverlayPayload(openUi, activeSessionId, activePersona, personas, sessions, history);
+            return new SessionOverlayPayload(openUi, activeSessionId, activePersona, activeAgent, personas, agents, sessions, history);
         } catch (Exception ignored) {
             return null;
         }

@@ -158,10 +158,7 @@ public class MineClawd {
     private static final String TOOL_LIST_ASSETS = "list-assets";
     private static final String TOOL_UPSERT_ASSET_RECORD = "upsert-asset-record";
     private static final String TOOL_REMOVE_ASSET_RECORD = "remove-asset-record";
-    private static final String TOOL_LEGACY_KUBEJS_EVAL = "kubejs_eval";
-    private static final String TOOL_KUBEJSOFFLINE_QUERY_CLASS = "kubejsoffline-query-class";
-    private static final String TOOL_KUBEJSOFFLINE_QUERY_EVENT = "kubejsoffline-query-event";
-    private static final String TOOL_KUBEJSOFFLINE_GENERATE_KB = "kubejsoffline-generate-kb";
+    private static final String LEGACY_TOOL_KUBEJS_EVAL = "kubejs_eval";
     private static final int TOOL_LIMIT_MIN = 1;
     private static final int TOOL_LIMIT_MAX = 20;
     private static final int MAX_REPEAT_TOOL_CALLS = 1;
@@ -418,6 +415,59 @@ public class MineClawd {
         "  - Do not leave temporary test blocks, entities, or commands in the world;",
         "    clean up immediately after validation.",
         "  - If unsure whether a change is safe, ask the player before applying it."
+    );
+
+    private static final String DYNAMIC_REGISTRY_PROMPT_APPENDIX = String.join("\n",
+
+        // ── DYNAMIC REGISTRY ──────────────────────────────────────────────────────
+        "*** DYNAMIC REGISTRY (RUNTIME PLACEHOLDER MODE) ***",
+        "True startup registration is still impossible in-session, but you can pseudo-register",
+        "content by configuring pre-registered placeholders.",
+        "",
+        "Tools:",
+        "  `list-dynamic-content`    Inspect used and free slots for items/blocks/fluids.",
+        "  `register-dynamic-item`   Claim a free item slot.",
+        "    Params: name, material_item (vanilla item id), throwable.",
+        "  `register-dynamic-block`  Claim a free block slot.",
+        "    Params: name, material_block (vanilla block id), friction.",
+        "  `register-dynamic-fluid`  Claim a free fluid slot.",
+        "    Params: name, material_fluid (vanilla fluid id), color (#RRGGBB, optional).",
+        "  `update-dynamic-item`     Update an existing item slot (requires slot).",
+        "  `update-dynamic-block`    Update an existing block slot (requires slot).",
+        "  `update-dynamic-fluid`    Update an existing fluid slot (requires slot).",
+        "  `unregister-dynamic-content`  Release a slot by type + slot.",
+        "",
+        "Rules:",
+        "  1. If the user does not specify a slot, call register tools without `slot` to auto-pick.",
+        "  2. Registered placeholders appear in creative tabs; unregistered slots stay hidden.",
+        "  3. Placeholder IDs are fixed: mineclawd:dynamic_item_001, _block_001, _fluid_001, etc.",
+        "  4. For material_* params, pick a semantically related vanilla ID; avoid unrelated defaults.",
+        "  5. After each register/update, verify real in-game state before claiming success.",
+        "  6. Clean up any temporary validation setups (test blocks, entities) immediately.",
+        "  7. For behavior beyond provided properties, combine with KubeJS scripts."
+    );
+
+    private static final String ASSET_TRACKING_PROMPT_APPENDIX = String.join("\n",
+
+        // ── ASSET TRACKING ────────────────────────────────────────────────────────
+        "*** ASSET TRACKING ***",
+        "Use persistent asset records so future sessions can continue previous work without",
+        "losing references to entities, scripts, commands, or dynamic content.",
+        "",
+        "Tools:",
+        "  `list-assets`         Inspect all currently tracked assets.",
+        "  `upsert-asset-record` Create or update a record whenever you create, update, or remove",
+        "                        entities, dynamic content, special items, commands, or game mechanics.",
+        "  `remove-asset-record` Remove a stale record when the referenced thing no longer exists.",
+        "",
+        "Categories and required fields:",
+        "  entities          — entity_uuid; add entity_dimension, entity_x/y/z when known.",
+        "  items_blocks_fluids — content_id (e.g. mineclawd:dynamic_item_001).",
+        "  special_items     — special_item_id; special_item_nbt if available.",
+        "  commands          — command text; script_path if scripted.",
+        "  game_mechanics    — summary, details, script_path when applicable.",
+        "",
+        "All categories support optional fields: summary, script_path."
     );
 
     public static void init() {
@@ -687,6 +737,14 @@ public class MineClawd {
                                 .executes(context -> {
                                     String soul = StringArgumentType.getString(context, "soul");
                                     return switchPersona(context.getSource(), soul);
+                                })))
+                .then(CommandManager.literal("agent")
+                        .executes(context -> showActiveAgent(context.getSource()))
+                        .then(CommandManager.argument("name", StringArgumentType.word())
+                                .suggests((context, builder) -> suggestAgentName(context.getSource(), builder))
+                                .executes(context -> {
+                                    String name = StringArgumentType.getString(context, "name");
+                                    return switchAgent(context.getSource(), name);
                                 })))
                 .then(CommandManager.literal("assistivetouch")
                         .executes(context -> setAssistiveTouch(context.getSource(), null))
@@ -1272,13 +1330,17 @@ public class MineClawd {
         SessionData activeSession = SESSION_MANAGER.loadActiveSession(ownerKey);
         String activeSessionId = activeSession == null ? "" : activeSession.id();
         String activePersona = PERSONA_MANAGER.getActiveSoulName(ownerKey);
+        String activeAgent = AGENT_MANAGER.getActiveAgentName(ownerKey);
         List<String> personas = PERSONA_MANAGER.listSoulNames();
+        List<String> agents = AGENT_MANAGER.listAgentNames();
 
         String payloadString = buildAssetsOverlayPayloadJson(
                 openUi,
                 activeSessionId,
                 activePersona,
+                activeAgent,
                 personas,
+                agents,
                 payloadAssets
         );
         var payload = new RegistryByteBuf(Unpooled.buffer(), player.getServerWorld().getRegistryManager());
@@ -1292,7 +1354,9 @@ public class MineClawd {
             boolean openUi,
             String activeSessionId,
             String activePersona,
+            String activeAgent,
             List<String> personas,
+            List<String> agents,
             List<AssetsOverlayPayload.AssetItem> assets
     ) {
         List<AssetsOverlayPayload.AssetItem> mutableAssets = new ArrayList<>(assets == null ? List.of() : assets);
@@ -1300,7 +1364,9 @@ public class MineClawd {
                 openUi,
                 activeSessionId,
                 activePersona,
+                activeAgent,
                 personas,
+                agents,
                 mutableAssets
         ).toJson();
         while (payloadString.length() > ASSETS_PACKET_MAX_CHARS && !mutableAssets.isEmpty()) {
@@ -1309,7 +1375,9 @@ public class MineClawd {
                     openUi,
                     activeSessionId,
                     activePersona,
+                    activeAgent,
                     personas,
+                    agents,
                     mutableAssets
             ).toJson();
         }
@@ -1320,7 +1388,9 @@ public class MineClawd {
                 openUi,
                 activeSessionId,
                 activePersona,
-                List.of(),
+                activeAgent,
+                personas,
+                agents,
                 List.of()
         ).toJson();
     }
@@ -1622,12 +1692,16 @@ public class MineClawd {
 
         String activeSessionId = selectedSession == null ? "" : selectedSession.id();
         String activePersona = PERSONA_MANAGER.getActiveSoulName(ownerKey);
+        String activeAgent = AGENT_MANAGER.getActiveAgentName(ownerKey);
         List<String> personas = PERSONA_MANAGER.listSoulNames();
+        List<String> agents = AGENT_MANAGER.listAgentNames();
         String payloadString = buildSessionsOverlayPayloadJson(
                 openUi,
                 activeSessionId,
                 activePersona,
+                activeAgent,
                 personas,
+                agents,
                 sessionItems,
                 historyItems
         );
@@ -1643,7 +1717,9 @@ public class MineClawd {
             boolean openUi,
             String activeSessionId,
             String activePersona,
+            String activeAgent,
             List<String> personas,
+            List<String> agents,
             List<SessionOverlayPayload.SessionItem> sessionItems,
             List<SessionOverlayPayload.HistoryItem> historyItems
     ) {
@@ -1654,7 +1730,9 @@ public class MineClawd {
                 openUi,
                 activeSessionId,
                 activePersona,
+                activeAgent,
                 personas,
+                agents,
                 sessionItems,
                 mutableHistory
         ).toJson();
@@ -1664,7 +1742,9 @@ public class MineClawd {
                     openUi,
                     activeSessionId,
                     activePersona,
+                    activeAgent,
                     personas,
+                    agents,
                     sessionItems,
                     mutableHistory
             ).toJson();
@@ -1676,7 +1756,9 @@ public class MineClawd {
                 openUi,
                 activeSessionId,
                 activePersona,
+                activeAgent,
                 personas,
+                agents,
                 sessionItems,
                 List.of(new SessionOverlayPayload.HistoryItem(true, "History is too large to transfer in one payload."))
         ).toJson();
@@ -1687,7 +1769,9 @@ public class MineClawd {
                 openUi,
                 activeSessionId,
                 activePersona,
-                List.of(),
+                activeAgent,
+                personas,
+                agents,
                 List.of(),
                 List.of()
         ).toJson();
@@ -1877,11 +1961,33 @@ public class MineClawd {
         return 1;
     }
 
+    private int showActiveAgent(ServerCommandSource source) {
+        if (!isOp(source)) {
+            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+            return 0;
+        }
+        String ownerKey = sessionOwnerKey(source);
+        Agent agent = AGENT_MANAGER.loadActiveAgent(ownerKey);
+        List<String> agents = AGENT_MANAGER.listAgentNames();
+        sendAgentMessage(source, "Active agent: `" + agent.name() + "`");
+        if (!agents.isEmpty()) {
+            sendAgentMessage(source, "Available agents: `" + String.join("`, `", agents) + "`");
+        }
+        return 1;
+    }
+
     private CompletableFuture<Suggestions> suggestSoulName(ServerCommandSource source, SuggestionsBuilder builder) {
         if (source == null || !isOp(source)) {
             return Suggestions.empty();
         }
         return CommandSource.suggestMatching(PERSONA_MANAGER.listSoulNames(), builder);
+    }
+
+    private CompletableFuture<Suggestions> suggestAgentName(ServerCommandSource source, SuggestionsBuilder builder) {
+        if (source == null || !isOp(source)) {
+            return Suggestions.empty();
+        }
+        return CommandSource.suggestMatching(AGENT_MANAGER.listAgentNames(), builder);
     }
 
     private CompletableFuture<Suggestions> suggestChooseOption(ServerCommandSource source, SuggestionsBuilder builder) {
@@ -2011,6 +2117,34 @@ public class MineClawd {
             return 1;
         }
         sendAgentMessage(source, "Switched persona to `" + resolved + "`.");
+        return 1;
+    }
+
+    private int switchAgent(ServerCommandSource source, String agentReference) {
+        if (!isOp(source)) {
+            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+            return 0;
+        }
+        String ownerKey = sessionOwnerKey(source);
+        if (ACTIVE_REQUESTS.containsKey(ownerKey)) {
+            source.sendError(Text.literal("MineClawd: cannot switch agent while a request is running."));
+            return 0;
+        }
+        String resolved = AGENT_MANAGER.resolveAgentName(agentReference);
+        if (resolved == null) {
+            source.sendError(Text.literal("MineClawd: agent not found. Use /mineclawd agent to list available agents."));
+            return 0;
+        }
+        if (!AGENT_MANAGER.setActiveAgent(ownerKey, resolved)) {
+            source.sendError(Text.literal("MineClawd: failed to switch agent."));
+            return 0;
+        }
+        if (source.getEntity() instanceof ServerPlayerEntity player
+                && canUseAssistiveOverlay(player, MineClawdNetworking.OPEN_SESSIONS)) {
+            sendSessionsOverlayToPlayer(source, player, false, null);
+            return 1;
+        }
+        sendAgentMessage(source, "Switched agent to `" + resolved + "`.");
         return 1;
     }
 
@@ -3117,7 +3251,7 @@ public class MineClawd {
         ToolExecutionResult result;
         switch (toolName) {
             case TOOL_APPLY_INSTANT_SERVER_SCRIPT:
-            case TOOL_LEGACY_KUBEJS_EVAL:
+            case LEGACY_TOOL_KUBEJS_EVAL:
                 String code = readRequiredStringArg(args, "code");
                 if (code == null || code.isBlank()) {
                     return "ERROR: Tool call is missing required string `code`.";
@@ -5479,9 +5613,12 @@ public class MineClawd {
         Agent agent = AGENT_MANAGER.loadActiveAgent(ownerKey);
         Persona persona = PERSONA_MANAGER.loadActivePersona(ownerKey);
         
-        String basePrompt = configured == null || configured.isBlank()
-                ? (agent.hasBasePrompt() ? agent.basePrompt() : BASE_SYSTEM_PROMPT)
-                : configured.trim();
+        // 优先级：agent prompt > 配置prompt > 硬编码默认值
+        String basePrompt = agent.hasBasePrompt() 
+                ? agent.basePrompt() 
+                : (configured == null || configured.isBlank() 
+                    ? BASE_SYSTEM_PROMPT 
+                    : configured.trim());
         Path serverRoot = WorkspaceFileToolExecutor.serverRoot(source);
         if (serverRoot == null) {
             serverRoot = Platform.getGameFolder().toAbsolutePath().normalize();
@@ -5549,11 +5686,17 @@ public class MineClawd {
         if (dynamicRegistryEnabled && agent.hasDynamicRegistryPrompt()) {
             prompt.append("\n\n")
                     .append(agent.dynamicRegistryPrompt());
+        } else if (dynamicRegistryEnabled) {
+            prompt.append("\n\n")
+                    .append(DYNAMIC_REGISTRY_PROMPT_APPENDIX);
         }
         
         if (agent.hasAssetTrackingPrompt()) {
             prompt.append("\n\n")
                     .append(agent.assetTrackingPrompt());
+        } else {
+            prompt.append("\n\n")
+                    .append(ASSET_TRACKING_PROMPT_APPENDIX);
         }
         return prompt.toString();
     }
@@ -5786,7 +5929,7 @@ public class MineClawd {
                 shortText = "Executing command " + summarizeCommandForStatus(command);
                 hoverText = command.isBlank() ? "" : "Command: " + normalizeCommandForHover(command);
             }
-            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, TOOL_LEGACY_KUBEJS_EVAL -> {
+            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, LEGACY_TOOL_KUBEJS_EVAL -> {
                 shortText = "Applying instant script";
                 hoverText = "Executing KubeJS instant script (code hidden).";
             }
@@ -5893,7 +6036,7 @@ public class MineClawd {
                 shortText = "Executed command " + summarizeCommandForStatus(command);
                 hoverText = command.isBlank() ? "" : "Command: " + normalizeCommandForHover(command);
             }
-            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, TOOL_LEGACY_KUBEJS_EVAL -> {
+            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, LEGACY_TOOL_KUBEJS_EVAL -> {
                 shortText = "Applied instant script";
                 hoverText = "Executed KubeJS instant script (code hidden).";
             }

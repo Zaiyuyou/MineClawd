@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.6.0] - 2026-03-14
+
+### Agent System (Major Architecture Change)
+
+- **重构了prompt架构**：从MineClawd的硬编码prompt系统转变为可自定义添加和切换的agent系统
+- **新增AgentManager**：支持创建、管理和切换不同的agent配置
+- **Agent优先级修复**：修复了agent prompt优先级问题，确保agent的prompt优先于配置中的硬编码值
+- **多类型prompt支持**：每个agent支持base、dynamic_registry、asset_tracking三种类型的prompt
+- **默认agent**：内置了"default"和"dum"两个示例agent
+- **Agent配置目录**：agent配置存储在`mineclawd/agents/`目录下，支持热重载
+
+### Fixed
+
+- **修复agent prompt优先级**：现在agent的prompt会正确提交给LLM，不再被配置中的硬编码值覆盖
+- **优化prompt构建逻辑**：确保agent prompt > 配置prompt > 硬编码默认值的正确优先级顺序
+
 ## [1.5.1] - 2026-02-26
 
 ### Added

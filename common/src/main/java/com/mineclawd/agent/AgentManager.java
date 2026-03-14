@@ -25,6 +25,7 @@ public final class AgentManager {
     
     private final Path agentsRoot;
     private final Path activeRoot;
+    private static final String ACTIVE_FILE_EXTENSION = ".txt";
 
     public AgentManager() {
         Path mineclawdRoot = Platform.getGameFolder().resolve("mineclawd");
@@ -65,10 +66,24 @@ public final class AgentManager {
     }
 
     public synchronized Agent loadActiveAgent(String ownerKey) {
+        ensureBundledAgents();
         String agentName = getActiveAgentName(ownerKey);
         String basePrompt = readAgentPromptContent(agentName, PROMPT_TYPE_BASE);
         String dynamicRegistryPrompt = readAgentPromptContent(agentName, PROMPT_TYPE_DYNAMIC_REGISTRY);
         String assetTrackingPrompt = readAgentPromptContent(agentName, PROMPT_TYPE_ASSET_TRACKING);
+        
+        if (basePrompt == null) {
+            agentName = DEFAULT_AGENT;
+            basePrompt = readAgentPromptContent(agentName, PROMPT_TYPE_BASE);
+            dynamicRegistryPrompt = readAgentPromptContent(agentName, PROMPT_TYPE_DYNAMIC_REGISTRY);
+            assetTrackingPrompt = readAgentPromptContent(agentName, PROMPT_TYPE_ASSET_TRACKING);
+        }
+        
+        if (basePrompt == null) {
+            basePrompt = "";
+            dynamicRegistryPrompt = "";
+            assetTrackingPrompt = "";
+        }
         
         return new Agent(agentName, basePrompt, dynamicRegistryPrompt, assetTrackingPrompt);
     }
@@ -99,18 +114,19 @@ public final class AgentManager {
         }
         Path path = agentsRoot.resolve(resolved).resolve(promptType + FILE_EXTENSION);
         if (!Files.isRegularFile(path)) {
-            return "";
+            return null;
         }
         try {
             return Files.readString(path, StandardCharsets.UTF_8);
         } catch (IOException exception) {
             MineClawd.LOGGER.warn("Failed to read agent prompt {}: {}", path, exception.getMessage());
-            return "";
+            return null;
         }
     }
 
     private void ensureBundledAgents() {
         ensureDefaultAgent();
+        ensureDumAgent();
     }
 
     private void ensureDefaultAgent() {
@@ -120,6 +136,15 @@ public final class AgentManager {
         ensureFileFromResourceIfMissing(defaultAgentDir.resolve(PROMPT_TYPE_BASE + FILE_EXTENSION), "/mineclawd/agents/default/base.md");
         ensureFileFromResourceIfMissing(defaultAgentDir.resolve(PROMPT_TYPE_DYNAMIC_REGISTRY + FILE_EXTENSION), "/mineclawd/agents/default/dynamic_registry.md");
         ensureFileFromResourceIfMissing(defaultAgentDir.resolve(PROMPT_TYPE_ASSET_TRACKING + FILE_EXTENSION), "/mineclawd/agents/default/asset_tracking.md");
+    }
+    
+    private void ensureDumAgent() {
+        Path dumAgentDir = agentsRoot.resolve("dum");
+        ensureDirectory(dumAgentDir);
+        
+        ensureFileFromResourceIfMissing(dumAgentDir.resolve(PROMPT_TYPE_BASE + FILE_EXTENSION), "/mineclawd/agents/dum/base.md");
+        ensureFileFromResourceIfMissing(dumAgentDir.resolve(PROMPT_TYPE_DYNAMIC_REGISTRY + FILE_EXTENSION), "/mineclawd/agents/dum/dynamic_registry.md");
+        ensureFileFromResourceIfMissing(dumAgentDir.resolve(PROMPT_TYPE_ASSET_TRACKING + FILE_EXTENSION), "/mineclawd/agents/dum/asset_tracking.md");
     }
     
     private void ensureDirectory(Path path) {
@@ -147,23 +172,22 @@ public final class AgentManager {
     }
     
     private String readSelectedAgent(String ownerKey) {
-        Path path = activeRoot.resolve(safeOwner(ownerKey) + FILE_EXTENSION);
+        Path path = activeRoot.resolve(safeOwner(ownerKey) + ACTIVE_FILE_EXTENSION);
         if (!Files.isRegularFile(path)) {
-            return "";
+            return DEFAULT_AGENT;
         }
         try {
             return Files.readString(path, StandardCharsets.UTF_8).trim();
         } catch (IOException exception) {
             MineClawd.LOGGER.warn("Failed to read active agent {}: {}", path, exception.getMessage());
-            return "";
+            return DEFAULT_AGENT;
         }
     }
     
     private void writeSelectedAgent(String ownerKey, String agentName) {
-        Path path = activeRoot.resolve(safeOwner(ownerKey) + FILE_EXTENSION);
+        Path path = activeRoot.resolve(safeOwner(ownerKey) + ACTIVE_FILE_EXTENSION);
         try {
-            Files.createDirectories(path);
-            Files.writeString(path, agentName + System.lineSeparator(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.writeString(path, agentName + System.lineSeparator(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to persist active agent: " + path, exception);
         }

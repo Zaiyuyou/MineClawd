@@ -187,7 +187,9 @@ public final class AgentResponseOverlay {
     private static final List<SessionOverlayPayload.SessionItem> sessionItems = new ArrayList<>();
     private static final List<AssetsOverlayPayload.AssetItem> assetItems = new ArrayList<>();
     private static final List<String> personaNames = new ArrayList<>();
+    private static final List<String> agentNames = new ArrayList<>();
     private static String activePersona = "";
+    private static String activeAgent = "";
     private static AssetFilter activeAssetFilter = AssetFilter.ALL;
     private static double sessionsScrollY = 0.0;
     private static double assetsScrollY = 0.0;
@@ -402,7 +404,10 @@ public final class AgentResponseOverlay {
         sessionItems.addAll(payload.sessions());
         personaNames.clear();
         personaNames.addAll(payload.personas());
+        agentNames.clear();
+        agentNames.addAll(payload.agents());
         activePersona = payload.activePersona() == null ? "" : payload.activePersona().trim();
+        activeAgent = payload.activeAgent() == null ? "" : payload.activeAgent().trim();
         activeSessionId = payload.activeSessionId() == null ? "" : payload.activeSessionId().trim();
         applyHistory(payload.history());
         activeRequestId = "";
@@ -437,7 +442,10 @@ public final class AgentResponseOverlay {
         assetItems.addAll(payload.assets());
         personaNames.clear();
         personaNames.addAll(payload.personas());
+        agentNames.clear();
+        agentNames.addAll(payload.agents());
         activePersona = payload.activePersona() == null ? "" : payload.activePersona().trim();
+        activeAgent = payload.activeAgent() == null ? "" : payload.activeAgent().trim();
         activeSessionId = payload.activeSessionId() == null ? "" : payload.activeSessionId().trim();
         awaitingFirstAssistantDelta = false;
         thinkingMinVisibleUntilEpochMs = 0L;
@@ -1884,6 +1892,7 @@ public final class AgentResponseOverlay {
         drawMenuItem(context, renderer, mouseX, mouseY, interactiveMode, left, top + MENU_ITEM_HEIGHT, "Sessions", MenuAction.SESSIONS);
         drawMenuItem(context, renderer, mouseX, mouseY, interactiveMode, left, top + MENU_ITEM_HEIGHT * 2, "Assets", MenuAction.ASSETS);
         drawMenuItem(context, renderer, mouseX, mouseY, interactiveMode, left, top + MENU_ITEM_HEIGHT * 3, "Persona", MenuAction.PERSONA);
+        drawMenuItem(context, renderer, mouseX, mouseY, interactiveMode, left, top + MENU_ITEM_HEIGHT * 4, "Agent", MenuAction.AGENT);
     }
 
     private static void drawMenuItem(
@@ -1909,12 +1918,15 @@ public final class AgentResponseOverlay {
         if (action == MenuAction.PERSONA && !activePersona.isBlank()) {
             text = "Persona (" + activePersona + ")";
         }
+        if (action == MenuAction.AGENT && !activeAgent.isBlank()) {
+            text = "Agent (" + activeAgent + ")";
+        }
         context.drawTextWithShadow(renderer, renderer.trimToWidth(text, MENU_WIDTH - 8), left + 4, top + 4, 0xFFF0F6FF);
         menuItems.add(new MenuItemBounds(left, top, right, bottom, action));
     }
 
     private static int menuItemCount() {
-        return 4;
+        return 5;
     }
 
     private static boolean shouldRenderInputBar() {
@@ -3516,6 +3528,10 @@ public final class AgentResponseOverlay {
             sendCommand(client, "mineclawd assets");
             return;
         }
+        if (action == MenuAction.AGENT) {
+            sendCommand(client, "mineclawd agent");
+            return;
+        }
         cyclePersona(client);
     }
 
@@ -4249,7 +4265,8 @@ public final class AgentResponseOverlay {
         CONFIG,
         SESSIONS,
         ASSETS,
-        PERSONA
+        PERSONA,
+        AGENT
     }
 
     private enum AssetAction {
