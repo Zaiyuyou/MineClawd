@@ -2,7 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
-## [1.6.0] - 2026-03-14
+## [1.6.3-Zaiyuyou-fork] - 2026-03-14
+
+### Architecture Refactoring (Tool System Decoupling)
+
+- **工具定义解耦重构**：将OpenAITools和vertexTools从MineClawd.java中解耦出来，创建了类似LangChain的工具链架构
+- **新增ToolDefinition类**：封装工具信息（名称、描述、参数），提供类型安全的工具定义
+- **新增ToolRegistry类**：集中管理所有工具定义，支持条件过滤和工具注册
+- **新增ToolFactory类**：根据LLM提供商创建对应的工具对象，支持OpenAI和VertexAI格式
+- **工具链管理**：实现了类似LangChain的工具链管理机制，支持工具的条件启用/禁用
+
+### Fixed
+
+- **修复文件结构问题**：在删除工具定义方法时修复了文件结构破坏导致的编译错误
+- **清理孤立代码**：删除了所有孤立的参数工具方法，确保代码整洁性
+- **编译验证**：确保重构后的代码能够正常编译和运行
+
+## [1.6.2-Zaiyuyou-fork] - 2026-03-14
 
 ### Agent System (Major Architecture Change)
 
