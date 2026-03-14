@@ -1,4 +1,4 @@
-package com.mineclawd.tool;
+package com.mineclawd.tool_sys;
 
 import com.google.gson.JsonObject;
 
@@ -26,7 +26,7 @@ public record ToolDefinition(
         JsonObject parameters = new JsonObject();
         parameters.addProperty("type", "object");
         parameters.add("properties", new JsonObject());
-        parameters.add("required", new JsonObject());
+        parameters.add("required", new com.google.gson.JsonArray());
         return new ToolDefinition(name, description, parameters);
     }
 }

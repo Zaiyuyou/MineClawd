@@ -43,7 +43,8 @@ import com.mineclawd.session.SessionManager.SessionData;
 import com.mineclawd.session.SessionManager.SessionSummary;
 import com.mineclawd.session.SessionOverlayPayload;
 import com.mineclawd.web.SearchToolExecutor;
-import com.mineclawd.tool.ToolFactory;
+import com.mineclawd.tool_sys.ToolFactory;
+import com.mineclawd.tool_sys.plugin.MineClawdPluginIntegration;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.Suggestions;
@@ -96,6 +97,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -130,6 +132,7 @@ public class MineClawd {
     private static final ConcurrentHashMap<UUID, ConcurrentHashMap<String, UploadAssembly>> PENDING_UPLOAD_ASSEMBLIES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Boolean> CLIENT_MOD_READY = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Boolean> CLIENT_GUI_ENABLED = new ConcurrentHashMap<>();
+    private static MineClawdPluginIntegration pluginIntegration;
 
     private static final String TOOL_APPLY_INSTANT_SERVER_SCRIPT = "apply-instant-server-script";
     private static final String TOOL_ASK_USER = "ask-user-question";
@@ -483,6 +486,14 @@ public class MineClawd {
         LifecycleEvent.SERVER_STARTED.register(DynamicContentRegistry::loadPersistentState);
         LifecycleEvent.SERVER_STOPPED.register(server -> DynamicContentRegistry.clearServerStateCache());
 
+        // 初始化插件化工具系统
+        // 新的插件系统将在需要时动态初始化
+        // pluginIntegration = new MineClawdPluginIntegration(server.createCommandSource());
+        // pluginIntegration.initialize();
+
+        // 检查工具定义验证结果
+        com.mineclawd.tool_sys.ToolRegistry.checkToolValidation();
+
         KubeJsScriptManager.ensureScriptInGameDir();
         MineClawdNetworking.register();
         PlayerEvent.PLAYER_JOIN.register(player -> {
@@ -497,6 +508,9 @@ public class MineClawd {
                     instance.sendBroadcastTargetSync(player);
                     instance.sendAssistiveTouchSync(player);
                     DynamicContentRegistry.syncToPlayer(player);
+                    
+                    // 发送工具验证警告消息
+                    com.mineclawd.tool_sys.ToolRegistry.sendToolValidationWarning(player);
                 });
         });
         PlayerEvent.PLAYER_QUIT.register(player -> {
@@ -1582,6 +1596,46 @@ public class MineClawd {
         }
         sendAgentMessage(source, "Gave `" + record.name() + "` to `" + player.getName().getString() + "`.");
         return 1;
+    }
+
+    /**
+     * 将JsonObject转换为Map
+     */
+    private Map<String, Object> convertJsonToMap(JsonObject json) {
+        Map<String, Object> map = new HashMap<>();
+        if (json != null) {
+            for (Map.Entry<String, JsonElement> entry : json.entrySet()) {
+                JsonElement element = entry.getValue();
+                if (element.isJsonPrimitive()) {
+                    if (element.getAsJsonPrimitive().isString()) {
+                        map.put(entry.getKey(), element.getAsString());
+                    } else if (element.getAsJsonPrimitive().isNumber()) {
+                        map.put(entry.getKey(), element.getAsNumber());
+                    } else if (element.getAsJsonPrimitive().isBoolean()) {
+                        map.put(entry.getKey(), element.getAsBoolean());
+                    }
+                } else if (element.isJsonObject()) {
+                    map.put(entry.getKey(), convertJsonToMap(element.getAsJsonObject()));
+                } else if (element.isJsonArray()) {
+                    List<Object> list = new ArrayList<>();
+                    for (JsonElement arrayElement : element.getAsJsonArray()) {
+                        if (arrayElement.isJsonPrimitive()) {
+                            if (arrayElement.getAsJsonPrimitive().isString()) {
+                                list.add(arrayElement.getAsString());
+                            } else if (arrayElement.getAsJsonPrimitive().isNumber()) {
+                                list.add(arrayElement.getAsNumber());
+                            } else if (arrayElement.getAsJsonPrimitive().isBoolean()) {
+                                list.add(arrayElement.getAsBoolean());
+                            }
+                        } else if (arrayElement.isJsonObject()) {
+                            list.add(convertJsonToMap(arrayElement.getAsJsonObject()));
+                        }
+                    }
+                    map.put(entry.getKey(), list);
+                }
+            }
+        }
+        return map;
     }
 
     private ToolExecutionResult runGiveItemCommand(
@@ -3249,6 +3303,20 @@ public class MineClawd {
                 ? sessionOwnerKey(source)
                 : runtime.ownerKey();
         MineClawdConfig config = MineClawdConfig.get();
+        
+        // 首先尝试使用插件化架构执行工具
+        if (pluginIntegration != null && pluginIntegration.isInitialized()) {
+            // 将参数转换为Map格式
+            Map<String, Object> pluginArgs = convertJsonToMap(args);
+            pluginArgs.put("tool_name", toolName);
+            
+            String pluginResult = pluginIntegration.executePluginTool(toolName, pluginArgs);
+            if (!pluginResult.startsWith("ERROR: 工具")) {
+                return pluginResult;
+            }
+        }
+        
+        // 如果插件化架构中找不到，使用原有的硬编码逻辑
         ToolExecutionResult result;
         switch (toolName) {
             case TOOL_APPLY_INSTANT_SERVER_SCRIPT:

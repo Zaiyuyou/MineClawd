@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.6.4-Zaiyuyou-fork] - 2026-03-14
+
+### Tool Validation System (Major Safety Improvement)
+
+- **OpenAI API Schema验证器**：新增`OpenAISchemaValidator`类，确保所有工具定义符合OpenAI函数调用API标准
+- **ParameterFactory参数工厂**：新增`ParameterFactory`类，支持JSON驱动的参数schema生成和验证，符合OpenAI API规范
+- **智能工具过滤**：工具注册表现在会自动验证工具schema，只有验证通过的工具才会被发送到LLM，确保基础聊天功能不受影响
+- **玩家状态通知**：当玩家加入游戏时，会自动发送工具验证状态消息（包含工具统计信息）
+- **Schema错误修复**：修复了`list-assets`工具中`properties`字段错误设置为数组的问题
+
+### Added
+
+- **工具验证机制**：`ToolRegistry`现在支持工具schema验证，自动检测和排除无效工具
+- **状态消息系统**：向玩家发送详细的工具验证状态消息，包括工具统计和问题工具列表
+- **参数生成框架**：`ParameterFactory`支持复杂JSON参数结构，包括嵌套对象、数组约束等高级特性
+- **验证结果记录**：服务器启动时记录详细的工具验证结果和统计信息
+
+### Fixed
+
+- **修复schema错误**：`AssetManagementTools.createNoArgParameters()`中`properties`字段错误地设置为数组而不是对象
+- **确保LLM兼容性**：所有工具定义现在都符合OpenAI API函数调用规范
+- **防止LLM功能中断**：无效工具不会被发送到LLM，确保基础聊天功能正常工作
+
 ## [1.6.3-Zaiyuyou-fork] - 2026-03-14
 
 ### Architecture Refactoring (Tool System Decoupling)
