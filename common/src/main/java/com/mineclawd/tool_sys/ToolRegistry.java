@@ -1,7 +1,6 @@
 package com.mineclawd.tool_sys;
 
 import com.mineclawd.tool.*;
-import com.mineclawd.tool_sys.plugin.MineClawdPluginIntegration;
 import com.google.gson.JsonObject;
 import com.mineclawd.MineClawd;
 import io.netty.buffer.Unpooled;
@@ -13,82 +12,34 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 工具注册表，管理所有可用的工具定义
- * 使用提供者模式，支持按功能领域分类管理工具
  */
 public final class ToolRegistry {
     private static final Map<String, ToolDefinition> REGISTRY = new ConcurrentHashMap<>();
     private static final Map<String, ToolDefinition> VALID_REGISTRY = new ConcurrentHashMap<>();
-    private static final List<ToolProvider> PROVIDERS = new ArrayList<>();
     private static final List<String> INVALID_TOOLS = new ArrayList<>();
     
     static {
-        // 注册内置工具提供者
-        registerBuiltinProviders();
-        // 从提供者加载工具定义
-        loadToolsFromProviders();
-    }
-    
-    /**
-     * 注册内置工具提供者
-     */
-    private static void registerBuiltinProviders() {
-        PROVIDERS.add(new FileSystemTools());
-        PROVIDERS.add(new NetworkTools());
-        PROVIDERS.add(new GameCommandTools());
-        PROVIDERS.add(new DynamicContentTools());
-        PROVIDERS.add(new AssetManagementTools());
-        PROVIDERS.add(new InteractionTools());
-    }
-    
-    /**
-     * 从插件管理器加载工具提供者
-     */
-    public static void loadFromPlugins() {
-        // 使用新的插件集成系统
-        // 插件工具将通过 MineClawdPluginIntegration 提供
-        // 这里暂时留空，由 MineClawd 主类负责初始化插件系统
-    }
-    
-    /**
-     * 重新加载所有工具定义（包括插件）
-     */
-    public static void reloadAll() {
-        REGISTRY.clear();
-        VALID_REGISTRY.clear();
-        INVALID_TOOLS.clear();
-        PROVIDERS.clear();
-        
-        // 重新注册内置提供者
-        registerBuiltinProviders();
-        
-        // 从插件加载提供者
-        loadFromPlugins();
-        
-        // 重新加载工具定义
-        loadToolsFromProviders();
-    }
-    
-    /**
-     * 从所有提供者加载工具定义
-     */
-    private static void loadToolsFromProviders() {
-        for (ToolProvider provider : PROVIDERS) {
-            for (ToolDefinition tool : provider.getTools()) {
-                register(tool);
-            }
+        System.out.println("[ToolRegistry] 静态初始化块开始执行...");
+        // 从ToolFactory注册内置工具
+        for (ToolDefinition tool : ToolFactory.getBuiltinTools()) {
+            register(tool);
         }
+        System.out.println("[ToolRegistry] 已加载 " + REGISTRY.size() + " 个工具定义");
+        System.out.println("[ToolRegistry] 静态初始化块执行完成");
     }
     
     /**
      * 注册工具定义
      */
     public static void register(ToolDefinition tool) {
+        System.out.println("[ToolRegistry] register() 被调用: tool=" + tool + ", tool.name()=" + (tool != null ? tool.name() : "null"));
         if (tool != null && tool.name() != null && !tool.name().isBlank()) {
             // 验证工具参数schema是否符合OpenAI规范
             OpenAISchemaValidator.ValidationResult validation = OpenAISchemaValidator.validateToolDefinition(tool);
             
             // 总是注册到完整注册表（保持向后兼容）
             REGISTRY.put(tool.name(), tool);
+            System.out.println("[ToolRegistry] 已注册工具: " + tool.name() + " (有效: " + validation.isValid() + ")");
             
             if (validation.isValid()) {
                 // 验证通过的工具注册到有效注册表
@@ -103,6 +54,8 @@ public final class ToolRegistry {
                     System.err.println("   - " + error);
                 }
             }
+        } else {
+            System.out.println("[ToolRegistry] 跳过注册: tool=" + tool + ", name=" + (tool != null ? tool.name() : "null"));
         }
     }
     
@@ -111,6 +64,22 @@ public final class ToolRegistry {
      */
     public static ToolDefinition get(String toolName) {
         return REGISTRY.get(toolName);
+    }
+    
+    /**
+     * 注销工具定义
+     */
+    public static void unregister(String toolName) {
+        if (toolName != null && !toolName.isBlank()) {
+            ToolDefinition removed = REGISTRY.remove(toolName);
+            if (removed != null) {
+                VALID_REGISTRY.remove(toolName);
+                INVALID_TOOLS.remove(toolName);
+                System.out.println("[ToolRegistry] 已注销工具: " + toolName);
+            } else {
+                System.out.println("[ToolRegistry] 工具不存在，无法注销: " + toolName);
+            }
+        }
     }
     
     /**

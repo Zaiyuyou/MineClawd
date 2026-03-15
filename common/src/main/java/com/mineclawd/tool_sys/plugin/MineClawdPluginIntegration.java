@@ -10,13 +10,14 @@ import java.util.*;
  * MineClawd插件集成接口
  * 将插件系统与MineClawd核心系统集成
  */
-public class MineClawdPluginIntegration implements ToolProvider {
+public class MineClawdPluginIntegration implements ToolProvider, PluginRegistrationCallback {
     
     private final PluginManager pluginManager;
     private boolean initialized = false;
     
     public MineClawdPluginIntegration(ServerCommandSource source) {
         this.pluginManager = new PluginManager(source);
+        this.pluginManager.registerCallback(this);
     }
     
     /**
@@ -30,7 +31,32 @@ public class MineClawdPluginIntegration implements ToolProvider {
         pluginManager.scanAndRegisterPlugins();
         initialized = true;
         
+        // 将插件工具注册到ToolRegistry
+        registerPluginToolsToRegistry();
+        
         System.out.println("[MineClawdPluginIntegration] 插件系统初始化完成");
+    }
+    
+    /**
+     * 将插件工具注册到ToolRegistry
+     */
+    private void registerPluginToolsToRegistry() {
+        System.out.println("[MineClawdPluginIntegration] 正在注册插件工具到ToolRegistry...");
+        
+        Collection<com.mineclawd.tool_sys.plugin.ToolDefinition> pluginTools = pluginManager.getAllTools();
+        System.out.println("[MineClawdPluginIntegration] 从PluginManager获取到 " + pluginTools.size() + " 个插件工具");
+        
+        for (com.mineclawd.tool_sys.plugin.ToolDefinition pluginTool : pluginTools) {
+            ToolDefinition toolDef = convertToMineClawdToolDefinition(pluginTool);
+            if (toolDef != null) {
+                com.mineclawd.tool_sys.ToolFactory.registerTool(toolDef);
+                System.out.println("[MineClawdPluginIntegration] 已注册插件工具: " + pluginTool.getName());
+            } else {
+                System.out.println("[MineClawdPluginIntegration] 转换工具定义失败: " + pluginTool.getName());
+            }
+        }
+        
+        System.out.println("[MineClawdPluginIntegration] 插件工具注册完成");
     }
     
     /**
@@ -77,6 +103,7 @@ public class MineClawdPluginIntegration implements ToolProvider {
      * 将插件工具定义转换为MineClawd工具定义
      */
     private ToolDefinition convertToMineClawdToolDefinition(com.mineclawd.tool_sys.plugin.ToolDefinition pluginTool) {
+        System.out.println("[MineClawdPluginIntegration] 转换工具定义: " + pluginTool.getName() + ", description: " + pluginTool.getDescription() + ", parameters: " + pluginTool.getParameters());
         try {
             // 创建JSON参数对象
             com.google.gson.JsonObject parameters = new com.google.gson.JsonObject();
@@ -99,14 +126,17 @@ public class MineClawdPluginIntegration implements ToolProvider {
             parameters.add("required", required);
             
             // 创建工具定义
-            return ToolDefinition.of(
+            ToolDefinition toolDef = ToolDefinition.of(
                 pluginTool.getName(),
                 pluginTool.getDescription(),
                 parameters
             );
+            System.out.println("[MineClawdPluginIntegration] 工具定义转换成功: " + toolDef);
+            return toolDef;
             
         } catch (Exception e) {
             System.err.println("转换工具定义失败: " + pluginTool.getName() + " - " + e.getMessage());
+            e.printStackTrace();
             return null;
         }
     }
@@ -163,5 +193,25 @@ public class MineClawdPluginIntegration implements ToolProvider {
     public void reload() {
         // 这里可以实现插件重新加载逻辑
         System.out.println("[MineClawdPluginIntegration] 重新加载插件系统");
+    }
+    
+    @Override
+    public void onPluginRegistered(AbstractPlugin plugin, PluginManager pluginManager) {
+        System.out.println("[MineClawdPluginIntegration] 响应: 插件已注册 - " + plugin.getPluginInfo().name());
+    }
+    
+    @Override
+    public void onPluginUnregistered(AbstractPlugin plugin, PluginManager pluginManager) {
+        System.out.println("[MineClawdPluginIntegration] 响应: 插件已卸载 - " + plugin.getPluginInfo().name());
+    }
+    
+    @Override
+    public void onToolRegistered(AbstractPlugin plugin, String toolName, PluginManager pluginManager) {
+        System.out.println("[MineClawdPluginIntegration] 响应: 工具已注册 - " + toolName + " (来自插件: " + plugin.getPluginInfo().name() + ")");
+    }
+    
+    @Override
+    public void onToolUnregistered(AbstractPlugin plugin, String toolName, PluginManager pluginManager) {
+        System.out.println("[MineClawdPluginIntegration] 响应: 工具已卸载 - " + toolName + " (来自插件: " + plugin.getPluginInfo().name() + ")");
     }
 }

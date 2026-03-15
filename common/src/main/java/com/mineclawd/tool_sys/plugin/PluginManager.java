@@ -17,6 +17,7 @@ public class PluginManager {
     private final Map<String, AbstractPlugin> plugins = new ConcurrentHashMap<>();
     private final Map<String, ToolDefinition> tools = new ConcurrentHashMap<>();
     private final Map<String, PluginConfig> pluginConfigs = new ConcurrentHashMap<>();
+    private final List<PluginRegistrationCallback> registrationCallbacks = new ArrayList<>();
     private final ServerCommandSource source;
     
     public PluginManager(ServerCommandSource source) {
@@ -24,18 +25,123 @@ public class PluginManager {
     }
     
     /**
+     * 注册插件注册回调
+     */
+    public void registerCallback(PluginRegistrationCallback callback) {
+        if (callback != null && !registrationCallbacks.contains(callback)) {
+            registrationCallbacks.add(callback);
+            info("注册插件注册回调: " + callback.getClass().getName());
+        }
+    }
+    
+    /**
+     * 移除插件注册回调
+     */
+    public void unregisterCallback(PluginRegistrationCallback callback) {
+        registrationCallbacks.remove(callback);
+        info("移除插件注册回调: " + callback.getClass().getName());
+    }
+    
+    /**
+     * 触发插件注册回调
+     */
+    private void triggerPluginRegistered(AbstractPlugin plugin) {
+        for (PluginRegistrationCallback callback : registrationCallbacks) {
+            try {
+                callback.onPluginRegistered(plugin, this);
+            } catch (Exception e) {
+                warn("触发插件注册回调失败: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 触发插件卸载回调
+     */
+    private void triggerPluginUnregistered(AbstractPlugin plugin) {
+        for (PluginRegistrationCallback callback : registrationCallbacks) {
+            try {
+                callback.onPluginUnregistered(plugin, this);
+            } catch (Exception e) {
+                warn("触发插件卸载回调失败: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 触发工具注册回调
+     */
+    private void triggerToolRegistered(AbstractPlugin plugin, String toolName) {
+        for (PluginRegistrationCallback callback : registrationCallbacks) {
+            try {
+                callback.onToolRegistered(plugin, toolName, this);
+            } catch (Exception e) {
+                warn("触发工具注册回调失败: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 触发工具卸载回调
+     */
+    private void triggerToolUnregistered(AbstractPlugin plugin, String toolName) {
+        for (PluginRegistrationCallback callback : registrationCallbacks) {
+            try {
+                callback.onToolUnregistered(plugin, toolName, this);
+            } catch (Exception e) {
+                warn("触发工具卸载回调失败: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
      * 扫描并注册插件
      */
     public void scanAndRegisterPlugins() {
-        // 这里应该实现类路径扫描逻辑
-        // 暂时使用手动注册的方式
-        
         info("开始扫描插件...");
+        
+        // 使用ServiceLoader扫描插件
+        java.util.ServiceLoader<AbstractPlugin> loader = java.util.ServiceLoader.load(AbstractPlugin.class);
+        System.out.println("[PluginManager] ServiceLoader.load() 返回 loader: " + loader);
+        
+        // 检查ServiceLoader的配置
+        java.util.Iterator<AbstractPlugin> iterator = loader.iterator();
+        System.out.println("[PluginManager] ServiceLoader 迭代器: " + iterator);
+        
+        int pluginCount = 0;
+        int checkedCount = 0;
+        while (iterator.hasNext()) {
+            checkedCount++;
+            try {
+                AbstractPlugin plugin = iterator.next();
+                pluginCount++;
+                System.out.println("[PluginManager] 发现插件 #" + pluginCount + ": " + plugin.getClass().getName() + ", pluginInfo: " + plugin.getPluginInfo());
+                registerPlugin(plugin);
+            } catch (Exception e) {
+                System.err.println("[PluginManager] 加载插件时出错: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+        System.out.println("[PluginManager] ServiceLoader扫描完成，检查了 " + checkedCount + " 个服务，共发现 " + pluginCount + " 个插件");
+        
+        // 如果没有找到插件，尝试手动注册MineClawd内置插件
+        if (plugins.isEmpty()) {
+            info("未找到外部插件，尝试注册内置插件...");
+            registerBuiltInPlugins();
+        }
         
         // 扫描完成后，初始化所有插件
         initializePlugins();
         
         info("插件扫描完成，共注册 " + plugins.size() + " 个插件，" + tools.size() + " 个工具");
+    }
+    
+    /**
+     * 注册内置插件（当没有找到外部插件时）
+     */
+    private void registerBuiltInPlugins() {
+        // 这里可以注册MineClawd内置的插件
+        // 目前暂时不注册任何内置插件
     }
     
     /**
@@ -65,6 +171,9 @@ public class PluginManager {
         plugin.onEnable(context);
         plugins.put(pluginId, plugin);
         
+        // 触发插件注册回调
+        triggerPluginRegistered(plugin);
+        
         // 扫描插件中的工具方法
         scanPluginTools(plugin);
         
@@ -79,10 +188,16 @@ public class PluginManager {
         String pluginId = pluginInfo.id();
         
         Method[] methods = plugin.getClass().getDeclaredMethods();
+        System.out.println("[PluginManager] 扫描插件 " + pluginId + " 的工具方法，共 " + methods.length + " 个方法");
         for (Method method : methods) {
             ToolExecutor toolAnnotation = method.getAnnotation(ToolExecutor.class);
-            if (toolAnnotation != null && toolAnnotation.enabled()) {
-                registerTool(plugin, method, toolAnnotation);
+            if (toolAnnotation != null) {
+                System.out.println("[PluginManager] 发现工具方法: " + method.getName() + ", annotation: " + toolAnnotation.name() + ", enabled: " + toolAnnotation.enabled());
+                if (toolAnnotation.enabled()) {
+                    registerTool(plugin, method, toolAnnotation);
+                } else {
+                    System.out.println("[PluginManager] 工具方法 " + toolAnnotation.name() + " 被禁用，跳过注册");
+                }
             }
         }
         
@@ -112,7 +227,11 @@ public class PluginManager {
         );
         
         tools.put(toolName, toolDefinition);
+        System.out.println("[PluginManager] 已注册工具: " + toolName + " (category: " + annotation.category() + ")");
         info("注册工具: " + toolName + " (" + annotation.category() + ")");
+        
+        // 触发工具注册回调
+        triggerToolRegistered(plugin, toolName);
     }
     
     /**
@@ -122,6 +241,10 @@ public class PluginManager {
         ToolDefinition tool = tools.get(toolName);
         if (tool == null) {
             return "ERROR: 工具 " + toolName + " 不存在";
+        }
+        
+        if (!tool.isEnabled()) {
+            return "ERROR: 工具 " + toolName + " 已被禁用";
         }
         
         try {
@@ -156,7 +279,52 @@ public class PluginManager {
      * 获取所有工具定义
      */
     public Collection<ToolDefinition> getAllTools() {
+        System.out.println("[PluginManager] getAllTools() 返回 " + tools.size() + " 个工具");
         return tools.values();
+    }
+    
+    /**
+     * 获取所有启用的工具定义
+     */
+    public List<ToolDefinition> getEnabledTools() {
+        return tools.values().stream()
+            .filter(ToolDefinition::isEnabled)
+            .toList();
+    }
+    
+    /**
+     * 获取所有禁用的工具定义
+     */
+    public List<ToolDefinition> getDisabledTools() {
+        return tools.values().stream()
+            .filter(tool -> !tool.isEnabled())
+            .toList();
+    }
+    
+    /**
+     * 启用工具
+     */
+    public boolean enableTool(String toolName) {
+        ToolDefinition tool = tools.get(toolName);
+        if (tool == null) {
+            return false;
+        }
+        tool.setEnabled(true);
+        info("启用工具: " + toolName);
+        return true;
+    }
+    
+    /**
+     * 禁用工具
+     */
+    public boolean disableTool(String toolName) {
+        ToolDefinition tool = tools.get(toolName);
+        if (tool == null) {
+            return false;
+        }
+        tool.setEnabled(false);
+        info("禁用工具: " + toolName);
+        return true;
     }
     
     /**

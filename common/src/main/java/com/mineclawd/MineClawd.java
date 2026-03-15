@@ -132,7 +132,7 @@ public class MineClawd {
     private static final ConcurrentHashMap<UUID, ConcurrentHashMap<String, UploadAssembly>> PENDING_UPLOAD_ASSEMBLIES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Boolean> CLIENT_MOD_READY = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Boolean> CLIENT_GUI_ENABLED = new ConcurrentHashMap<>();
-    private static MineClawdPluginIntegration pluginIntegration;
+    private MineClawdPluginIntegration pluginIntegration;
 
     private static final String TOOL_APPLY_INSTANT_SERVER_SCRIPT = "apply-instant-server-script";
     private static final String TOOL_ASK_USER = "ask-user-question";
@@ -483,16 +483,17 @@ public class MineClawd {
         MineClawdConfig.HANDLER.load();
         MineClawdConfig.HANDLER.save();
         DynamicContentRegistry.bootstrap(MineClawdConfig.get());
-        LifecycleEvent.SERVER_STARTED.register(DynamicContentRegistry::loadPersistentState);
-        LifecycleEvent.SERVER_STOPPED.register(server -> DynamicContentRegistry.clearServerStateCache());
-
-        // 初始化插件化工具系统
-        // 新的插件系统将在需要时动态初始化
-        // pluginIntegration = new MineClawdPluginIntegration(server.createCommandSource());
-        // pluginIntegration.initialize();
-
+        
+        // 初始化工具系统（ToolFactory会在静态初始化时注册所有内置工具）
         // 检查工具定义验证结果
         com.mineclawd.tool_sys.ToolRegistry.checkToolValidation();
+        
+        LifecycleEvent.SERVER_STARTED.register(server -> {
+            DynamicContentRegistry.loadPersistentState(server);
+        });
+        LifecycleEvent.SERVER_STOPPED.register(server -> {
+            DynamicContentRegistry.clearServerStateCache();
+        });
 
         KubeJsScriptManager.ensureScriptInGameDir();
         MineClawdNetworking.register();
@@ -782,7 +783,24 @@ public class MineClawd {
                                 .executes(context -> {
                                     String request = StringArgumentType.getString(context, "request");
                                     return handleRequest(context.getSource(), request);
-                                }))));
+                                })))
+                .then(CommandManager.literal("tool")
+                        .then(CommandManager.literal("list")
+                                .executes(context -> listTools(context.getSource())))
+                        .then(CommandManager.literal("enable")
+                                .then(CommandManager.argument("tool", StringArgumentType.word())
+                                        .suggests((context, builder) -> suggestToolName(context.getSource(), builder, false))
+                                        .executes(context -> {
+                                            String toolName = StringArgumentType.getString(context, "tool");
+                                            return enableTool(context.getSource(), toolName);
+                                        })))
+                        .then(CommandManager.literal("disable")
+                                .then(CommandManager.argument("tool", StringArgumentType.word())
+                                        .suggests((context, builder) -> suggestToolName(context.getSource(), builder, true))
+                                        .executes(context -> {
+                                            String toolName = StringArgumentType.getString(context, "tool");
+                                            return disableTool(context.getSource(), toolName);
+                                        })))));
 
         dispatcher.register(CommandManager.literal("mclawd")
                 .requires(this::isOp)
@@ -1304,6 +1322,109 @@ public class MineClawd {
         }
         sendAgentMessage(source, "Actions: `/mineclawd assets teleport <asset>`, `/mineclawd assets give <asset>`, `/mineclawd assets remove-record <asset>`.");
         return 1;
+    }
+
+    private int listTools(ServerCommandSource source) {
+        if (!isOp(source)) {
+            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+            return 0;
+        }
+        
+        if (pluginIntegration == null || !pluginIntegration.isInitialized()) {
+            sendAgentMessage(source, "Plugin system not initialized.");
+            return 0;
+        }
+        
+        List<com.mineclawd.tool_sys.plugin.ToolDefinition> allTools = new ArrayList<>(pluginIntegration.getPluginManager().getAllTools());
+        
+        if (allTools.isEmpty()) {
+            sendAgentMessage(source, "No tools registered.");
+            return 1;
+        }
+        
+        int enabledCount = 0;
+        int disabledCount = 0;
+        
+        sendAgentMessage(source, "Tools (`" + allTools.size() + "` total):");
+        
+        for (com.mineclawd.tool_sys.plugin.ToolDefinition tool : allTools) {
+            String status = tool.isEnabled() ? "✅ enabled" : "❌ disabled";
+            String sourceInfo = tool.getSource();
+            if ("mineclawd".equals(sourceInfo)) {
+                sourceInfo = "MineClawd (built-in)";
+            } else if (sourceInfo.startsWith("mod:")) {
+                sourceInfo = "Mod: " + sourceInfo.substring(4);
+            }
+            
+            sendAgentMessage(source, "  `" + tool.getName() + "` - " + status + " (" + sourceInfo + ")");
+            
+            if (tool.isEnabled()) {
+                enabledCount++;
+            } else {
+                disabledCount++;
+            }
+        }
+        
+        sendAgentMessage(source, "Summary: " + enabledCount + " enabled, " + disabledCount + " disabled");
+        sendAgentMessage(source, "Usage: `/mineclawd tool enable <toolname>` or `/mineclawd tool disable <toolname>`");
+        return 1;
+    }
+    
+    private int enableTool(ServerCommandSource source, String toolName) {
+        if (!isOp(source)) {
+            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+            return 0;
+        }
+        
+        if (pluginIntegration == null || !pluginIntegration.isInitialized()) {
+            sendAgentMessage(source, "Plugin system not initialized.");
+            return 0;
+        }
+        
+        if (pluginIntegration.getPluginManager().enableTool(toolName)) {
+            sendAgentMessage(source, "✅ Tool `" + toolName + "` enabled");
+        } else {
+            sendAgentMessage(source, "❌ Tool `" + toolName + "` not found");
+        }
+        return 1;
+    }
+    
+    private int disableTool(ServerCommandSource source, String toolName) {
+        if (!isOp(source)) {
+            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+            return 0;
+        }
+        
+        if (pluginIntegration == null || !pluginIntegration.isInitialized()) {
+            sendAgentMessage(source, "Plugin system not initialized.");
+            return 0;
+        }
+        
+        if (pluginIntegration.getPluginManager().disableTool(toolName)) {
+            sendAgentMessage(source, "❌ Tool `" + toolName + "` disabled");
+        } else {
+            sendAgentMessage(source, "❌ Tool `" + toolName + "` not found");
+        }
+        return 1;
+    }
+    
+    private CompletableFuture<Suggestions> suggestToolName(ServerCommandSource source, SuggestionsBuilder builder, boolean disabledOnly) {
+        if (source == null || !isOp(source) || pluginIntegration == null || !pluginIntegration.isInitialized()) {
+            return Suggestions.empty();
+        }
+        
+        List<String> toolNames = new ArrayList<>();
+        for (com.mineclawd.tool_sys.plugin.ToolDefinition tool : pluginIntegration.getPluginManager().getAllTools()) {
+            if (disabledOnly && tool.isEnabled()) {
+                continue;
+            }
+            if (!disabledOnly && !tool.isEnabled()) {
+                continue;
+            }
+            toolNames.add(tool.getName());
+        }
+        
+        return CommandSource.suggestMatching(toolNames, builder);
     }
 
     private void sendAssetsOverlayToPlayer(ServerCommandSource source, ServerPlayerEntity player, boolean openUi) {

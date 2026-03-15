@@ -100,7 +100,8 @@ public final class MineClawdAPI {
      * 在动态添加/移除插件后调用此方法
      */
     public static void reloadTools() {
-        com.mineclawd.tool_sys.ToolRegistry.reloadAll();
+        // 重新加载工具（ToolFactory会在静态初始化时注册所有内置工具）
+        com.mineclawd.tool_sys.ToolRegistry.checkToolValidation();
     }
     
     /**

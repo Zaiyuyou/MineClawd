@@ -20,6 +20,8 @@ public class ToolDefinition {
     private final Object pluginInstance;
     private final List<ParameterDefinition> parameters;
     private final ToolExecutor.ParameterMode parameterMode;
+    private boolean enabled;
+    private final String source;
     
     public ToolDefinition(String name, String description, String category, 
                          Method method, Object pluginInstance, 
@@ -30,7 +32,20 @@ public class ToolDefinition {
         this.method = method;
         this.pluginInstance = pluginInstance;
         this.parameterMode = parameterMode;
+        this.enabled = true;
+        this.source = extractSource(pluginInstance);
         this.parameters = extractParameters(method);
+    }
+    
+    private String extractSource(Object pluginInstance) {
+        if (pluginInstance instanceof AbstractPlugin plugin) {
+            String pluginId = plugin.getPluginId();
+            if ("mineclawd".equals(pluginId)) {
+                return "mineclawd";
+            }
+            return "mod:" + pluginId;
+        }
+        return "unknown";
     }
     
     private List<ParameterDefinition> extractParameters(Method method) {
@@ -72,6 +87,10 @@ public class ToolDefinition {
     public Object getPluginInstance() { return pluginInstance; }
     public List<ParameterDefinition> getParameters() { return parameters; }
     public ToolExecutor.ParameterMode getParameterMode() { return parameterMode; }
+    public boolean isEnabled() { return enabled; }
+    public String getSource() { return source; }
+    
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
     
     /**
      * 参数定义内部类
