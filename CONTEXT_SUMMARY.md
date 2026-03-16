@@ -1,42 +1,43 @@
-# MineClawd 工具系统重构 - 对话上下文总结
+# MineClawd Agent 架构重构 - 对话上下文总结
 
-## 当前状态（2026-03-14 15:30）
+## 当前状态（2026-03-16）
 
-### 最近完成的工作（2026-03-14 15:30）
+### 最近完成的工作（2026-03-16）
 
-**工具验证系统重大安全改进**
+**Agent 架构设计完成**
 
-1. **OpenAI API Schema验证系统**
-   - 新增`OpenAISchemaValidator.java` - 完整的工具定义验证器
-   - 新增`ParameterFactory.java` - JSON驱动的参数schema生成工厂
-   - 修复了`list-assets`工具中`properties`字段错误设置为数组的问题
+1. **完整架构层级设计**
+   - 创建了7层架构体系
+   - 定义了各层职责和接口
+   - 设计了统一接口层（第3.5层）
+   - 完善了数据流向和调用关系
 
-2. **智能工具过滤机制**
-   - `ToolRegistry.java`现在支持自动验证工具schema
-   - 只有验证通过的工具才会被发送到LLM，确保基础聊天功能不受影响
-   - 维护两个独立的注册表：完整注册表（向后兼容）和有效注册表（验证通过）
+2. **Skills vs Workflow 路由设计**
+   - 明确了 Skills 是动态的工作流生成器
+   - 明确了 Workflow 是固化的工作流模板
+   - 设计了5个场景的路由逻辑
+   - 定义了用户确认 Workflow 的流程
 
-3. **玩家状态通知系统**
-   - 玩家加入游戏时自动发送工具验证状态消息
-   - 包含详细的工具统计信息（总计、有效、无效工具数量）
-   - 问题工具列表和服务器日志指引
+3. **架构文档创建**
+   - 创建了 `ARCHITECTURE.md` 完整架构说明文档
+   - 包含架构概览、核心概念、各层职责
+   - 包含 Skills vs Workflow 路由章节
+   - 包含重构计划
 
-4. **网络消息发送修复**
-   - 修正了`RegistryByteBuf`的类路径错误
-   - 使用正确的网络消息发送机制（参考`DynamicContentRegistry.java`）
-   - 确保消息能够正确发送到玩家
-
-### 已完成的工作
+4. **AgentProtocolHandler 创建**
+   - 创建了 `AgentProtocolHandler.java` 类
+   - 实现了 JSON 构建和解析功能
+   - 提供了 OpenAI 和 Vertex AI 的支持
 
 ### 已完成的工作
 
 1. **工具系统初步解耦**
-   - 将OpenAITools和vertexTools从MineClawd.java中解耦
-   - 创建了`tool_sys`包，包含核心架构类：
+   - 将 OpenAI Tools 和 Vertex Tools 从 MineClawd.java 中解耦
+   - 创建了 `tool_sys` 包，包含核心架构类：
      - `ToolDefinition.java` - 工具定义记录类
      - `ToolProvider.java` - 工具提供者接口
      - `ToolRegistry.java` - 工具注册表
-     - `ToolFactory.java` - LLM工具工厂
+     - `ToolFactory.java` - LLM 工具工厂
 
 2. **工具分类重构**
    - 将工具按功能领域分为6个类别：
@@ -49,7 +50,7 @@
 
 3. **插件化架构设计**
    - 设计了完整的插件化工具系统架构
-   - 创建了`plugin`包，包含：
+   - 创建了 `plugin` 包，包含：
      - `ToolPlugin.java` - 工具插件接口
      - `PluginManager.java` - 插件管理器
      - `ToolExecutor.java` - 工具执行器接口
@@ -57,7 +58,7 @@
      - `AbstractToolPlugin.java` - 抽象插件基类
 
 4. **API接口规范**
-   - 创建了`api`包，包含：
+   - 创建了 `api` 包，包含：
      - `MineClawdAPI.java` - 为其他mod提供标准化集成接口
 
 ### 当前架构问题
@@ -112,11 +113,11 @@ External Mod Integration (外部mod集成)
 ## 下一步工作
 
 ### 已完成的高优先级工作 ✅
-1. **工具验证系统实现**
-   - 实现OpenAI API Schema验证器
-   - 创建参数工厂支持JSON驱动参数生成
-   - 实现智能工具过滤机制
-   - 添加玩家状态通知系统
+1. **Agent 架构设计**
+   - 完整7层架构设计
+   - Skills vs Workflow 路由设计
+   - 架构文档创建
+   - AgentProtocolHandler 创建
 
 2. **Schema错误修复**
    - 修复`list-assets`工具的`properties`字段错误
@@ -170,21 +171,24 @@ External Mod Integration (外部mod集成)
 - **技术目标**：类似LangChain的模块化架构，支持动态插件加载
 - **当前进展**：基础架构设计完成，工具验证系统已实现，解决了关键的安全问题
 
-### 最近的对话重点（2026-03-14 15:30）
-- **问题发现**：`list-assets`工具存在400错误，`properties`字段错误设置为数组
-- **解决方案**：实现OpenAI API Schema验证系统，确保工具定义符合规范
-- **安全改进**：智能工具过滤机制，防止无效工具影响LLM基础功能
-- **用户体验**：玩家状态通知系统，提供详细的工具验证信息
-- **技术修复**：修正`RegistryByteBuf`类路径错误，确保网络消息正常发送
+### 最近的对话重点（2026-03-16）
+- **架构设计**：完整7层 Agent 架构设计
+- **Skills vs Workflow**：明确 Skills 是动态的工作流生成器，Workflow 是固化的工作流模板
+- **路由设计**：设计了5个场景的路由逻辑
+- **架构文档**：创建了 ARCHITECTURE.md 完整架构说明文档
+- **AgentProtocolHandler**：创建了 AgentProtocolHandler.java 类
 
 ## 后续讨论建议
 
 当继续讨论时，可以基于以下方面展开：
-1. **插件系统完善**：修复`ToolExecutorInitializer.java`的编译错误
-2. **工具执行器实现**：完成所有内置工具的执行器开发
-3. **动态加载机制**：实现真正的插件动态注册和卸载
-4. **性能监控**：添加工具执行性能监控和优化
-5. **安全增强**：进一步强化插件系统的安全性机制
+1. **重构统一接口层**：实现 SkillInterface, WorkflowInterface, ToolInterface
+2. **重构具体实现层**：实现 Skills 和 Workflow 的具体实现
+3. **重构 Agent 层**：协调 LLM, Memory, Skills/Workflow/Tool
+4. **重构 Handler**：JSON 构建和解析
+5. **重构 LLM Client**：HTTP 通信
+6. **修复编译错误**：修正 ToolExecutorInitializer.java 的类路径引用
+7. **实现工具执行器**：完成所有内置工具的执行器开发
+8. **动态加载机制**：实现真正的插件动态注册和卸载
 
 ---
 *此文档由AI助手根据对话内容自动生成，记录了当前的技术状态和后续工作方向。*
