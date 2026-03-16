@@ -1,6 +1,6 @@
 package com.mineclawd.api;
 
-import com.mineclawd.tool_sys.plugin.AbstractPlugin;
+import com.mineclawd.tool_sys.plugin.PluginToolProvider;
 import com.mineclawd.tool_sys.plugin.MineClawdPluginIntegration;
 import com.mineclawd.MineClawd;
 
@@ -19,10 +19,12 @@ public final class MineClawdAPI {
      * @param plugin 工具插件实例
      * @return 注册是否成功
      */
-    public static boolean registerPlugin(AbstractPlugin plugin) {
-        // 新的插件系统将在需要时动态初始化
-        // 这里暂时返回true表示成功
-        return true;
+    public static boolean registerPlugin(MineClawdPluginIntegration plugin) {
+        if (plugin != null) {
+            com.mineclawd.tool_sys.ToolRegistry.loadFromPlugins(plugin.getToolProvider());
+            return true;
+        }
+        return false;
     }
     
     /**
@@ -100,8 +102,7 @@ public final class MineClawdAPI {
      * 在动态添加/移除插件后调用此方法
      */
     public static void reloadTools() {
-        // 重新加载工具（ToolFactory会在静态初始化时注册所有内置工具）
-        com.mineclawd.tool_sys.ToolRegistry.checkToolValidation();
+        com.mineclawd.tool_sys.ToolRegistry.reloadAll(null);
     }
     
     /**

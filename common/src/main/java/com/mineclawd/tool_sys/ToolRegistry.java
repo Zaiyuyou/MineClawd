@@ -1,6 +1,7 @@
 package com.mineclawd.tool_sys;
 
 import com.mineclawd.tool.*;
+import com.mineclawd.tool_sys.plugin.PluginToolProvider;
 import com.google.gson.JsonObject;
 import com.mineclawd.MineClawd;
 import io.netty.buffer.Unpooled;
@@ -12,20 +13,80 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 工具注册表，管理所有可用的工具定义
+ * 使用提供者模式，支持按功能领域分类管理工具
  */
 public final class ToolRegistry {
     private static final Map<String, ToolDefinition> REGISTRY = new ConcurrentHashMap<>();
     private static final Map<String, ToolDefinition> VALID_REGISTRY = new ConcurrentHashMap<>();
+    private static final List<ToolProvider> PROVIDERS = new ArrayList<>();
     private static final List<String> INVALID_TOOLS = new ArrayList<>();
     
     static {
         System.out.println("[ToolRegistry] 静态初始化块开始执行...");
-        // 从ToolFactory注册内置工具
-        for (ToolDefinition tool : ToolFactory.getBuiltinTools()) {
-            register(tool);
-        }
+        // 注册内置工具提供者
+        registerBuiltinProviders();
+        System.out.println("[ToolRegistry] 已注册 " + PROVIDERS.size() + " 个工具提供者");
+        // 从提供者加载工具定义
+        loadToolsFromProviders();
         System.out.println("[ToolRegistry] 已加载 " + REGISTRY.size() + " 个工具定义");
         System.out.println("[ToolRegistry] 静态初始化块执行完成");
+    }
+    
+    /**
+     * 注册内置工具提供者
+     */
+    private static void registerBuiltinProviders() {
+        PROVIDERS.add(new FileSystemTools());
+        PROVIDERS.add(new NetworkTools());
+        PROVIDERS.add(new GameCommandTools());
+        PROVIDERS.add(new DynamicContentTools());
+        PROVIDERS.add(new AssetManagementTools());
+        PROVIDERS.add(new InteractionTools());
+    }
+    
+    /**
+     * 从插件加载工具提供者
+     */
+    public static void loadFromPlugins(PluginToolProvider pluginToolProvider) {
+        if (pluginToolProvider != null) {
+            PROVIDERS.add(pluginToolProvider);
+            System.out.println("[ToolRegistry] 已注册插件工具提供者: " + pluginToolProvider.getName());
+        }
+    }
+    
+    /**
+     * 重新加载所有工具定义（包括插件）
+     */
+    public static void reloadAll(PluginToolProvider pluginToolProvider) {
+        REGISTRY.clear();
+        VALID_REGISTRY.clear();
+        INVALID_TOOLS.clear();
+        PROVIDERS.clear();
+        
+        // 重新注册内置提供者
+        registerBuiltinProviders();
+        
+        // 从插件加载提供者
+        loadFromPlugins(pluginToolProvider);
+        
+        // 重新加载工具定义
+        loadToolsFromProviders();
+    }
+    
+    /**
+     * 从所有提供者加载工具定义
+     */
+    private static void loadToolsFromProviders() {
+        System.out.println("[ToolRegistry] 开始从提供者加载工具...");
+        for (ToolProvider provider : PROVIDERS) {
+            System.out.println("[ToolRegistry] 从提供者 " + provider.getName() + " 加载工具...");
+            List<ToolDefinition> tools = provider.getTools();
+            System.out.println("[ToolRegistry] 提供者 " + provider.getName() + " 返回 " + tools.size() + " 个工具");
+            for (ToolDefinition tool : tools) {
+                register(tool);
+            }
+        }
+        System.out.println("[ToolRegistry] 工具加载完成");
     }
     
     /**

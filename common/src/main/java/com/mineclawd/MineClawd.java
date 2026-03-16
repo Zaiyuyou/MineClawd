@@ -44,6 +44,7 @@ import com.mineclawd.session.SessionManager.SessionSummary;
 import com.mineclawd.session.SessionOverlayPayload;
 import com.mineclawd.web.SearchToolExecutor;
 import com.mineclawd.tool_sys.ToolFactory;
+import com.mineclawd.tool_sys.ToolRegistry;
 import com.mineclawd.tool_sys.plugin.MineClawdPluginIntegration;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -484,11 +485,15 @@ public class MineClawd {
         MineClawdConfig.HANDLER.save();
         DynamicContentRegistry.bootstrap(MineClawdConfig.get());
         
-        // 初始化工具系统（ToolFactory会在静态初始化时注册所有内置工具）
-        // 检查工具定义验证结果
-        com.mineclawd.tool_sys.ToolRegistry.checkToolValidation();
-        
+        // 初始化插件化工具系统
+        // 延迟到SERVER_STARTED事件中初始化，此时server可用
         LifecycleEvent.SERVER_STARTED.register(server -> {
+            instance.pluginIntegration = new MineClawdPluginIntegration("mineclawd");
+            instance.pluginIntegration.initialize();
+            // 将插件工具提供者注册到ToolRegistry
+            com.mineclawd.tool_sys.ToolRegistry.loadFromPlugins(instance.pluginIntegration.getToolProvider());
+            // 检查工具定义验证结果
+            com.mineclawd.tool_sys.ToolRegistry.checkToolValidation();
             DynamicContentRegistry.loadPersistentState(server);
         });
         LifecycleEvent.SERVER_STOPPED.register(server -> {
@@ -1330,12 +1335,7 @@ public class MineClawd {
             return 0;
         }
         
-        if (pluginIntegration == null || !pluginIntegration.isInitialized()) {
-            sendAgentMessage(source, "Plugin system not initialized.");
-            return 0;
-        }
-        
-        List<com.mineclawd.tool_sys.plugin.ToolDefinition> allTools = new ArrayList<>(pluginIntegration.getPluginManager().getAllTools());
+        List<com.mineclawd.tool_sys.ToolDefinition> allTools = ToolRegistry.getAll();
         
         if (allTools.isEmpty()) {
             sendAgentMessage(source, "No tools registered.");
@@ -1347,22 +1347,13 @@ public class MineClawd {
         
         sendAgentMessage(source, "Tools (`" + allTools.size() + "` total):");
         
-        for (com.mineclawd.tool_sys.plugin.ToolDefinition tool : allTools) {
-            String status = tool.isEnabled() ? "✅ enabled" : "❌ disabled";
-            String sourceInfo = tool.getSource();
-            if ("mineclawd".equals(sourceInfo)) {
-                sourceInfo = "MineClawd (built-in)";
-            } else if (sourceInfo.startsWith("mod:")) {
-                sourceInfo = "Mod: " + sourceInfo.substring(4);
-            }
+        for (com.mineclawd.tool_sys.ToolDefinition tool : allTools) {
+            String status = "✅ enabled";
+            String sourceInfo = "MineClawd (built-in)";
             
-            sendAgentMessage(source, "  `" + tool.getName() + "` - " + status + " (" + sourceInfo + ")");
+            sendAgentMessage(source, "  `" + tool.name() + "` - " + status + " (" + sourceInfo + ")");
             
-            if (tool.isEnabled()) {
-                enabledCount++;
-            } else {
-                disabledCount++;
-            }
+            enabledCount++;
         }
         
         sendAgentMessage(source, "Summary: " + enabledCount + " enabled, " + disabledCount + " disabled");
@@ -1376,16 +1367,7 @@ public class MineClawd {
             return 0;
         }
         
-        if (pluginIntegration == null || !pluginIntegration.isInitialized()) {
-            sendAgentMessage(source, "Plugin system not initialized.");
-            return 0;
-        }
-        
-        if (pluginIntegration.getPluginManager().enableTool(toolName)) {
-            sendAgentMessage(source, "✅ Tool `" + toolName + "` enabled");
-        } else {
-            sendAgentMessage(source, "❌ Tool `" + toolName + "` not found");
-        }
+        sendAgentMessage(source, "❌ Tool `" + toolName + "` not found (plugin system simplified)");
         return 1;
     }
     
@@ -1395,33 +1377,21 @@ public class MineClawd {
             return 0;
         }
         
-        if (pluginIntegration == null || !pluginIntegration.isInitialized()) {
-            sendAgentMessage(source, "Plugin system not initialized.");
-            return 0;
-        }
-        
-        if (pluginIntegration.getPluginManager().disableTool(toolName)) {
-            sendAgentMessage(source, "❌ Tool `" + toolName + "` disabled");
-        } else {
-            sendAgentMessage(source, "❌ Tool `" + toolName + "` not found");
-        }
+        sendAgentMessage(source, "❌ Tool `" + toolName + "` not found (plugin system simplified)");
         return 1;
     }
     
     private CompletableFuture<Suggestions> suggestToolName(ServerCommandSource source, SuggestionsBuilder builder, boolean disabledOnly) {
-        if (source == null || !isOp(source) || pluginIntegration == null || !pluginIntegration.isInitialized()) {
+        if (source == null || !isOp(source)) {
             return Suggestions.empty();
         }
         
         List<String> toolNames = new ArrayList<>();
-        for (com.mineclawd.tool_sys.plugin.ToolDefinition tool : pluginIntegration.getPluginManager().getAllTools()) {
-            if (disabledOnly && tool.isEnabled()) {
+        for (com.mineclawd.tool_sys.ToolDefinition tool : ToolRegistry.getAll()) {
+            if (disabledOnly) {
                 continue;
             }
-            if (!disabledOnly && !tool.isEnabled()) {
-                continue;
-            }
-            toolNames.add(tool.getName());
+            toolNames.add(tool.name());
         }
         
         return CommandSource.suggestMatching(toolNames, builder);
@@ -3425,19 +3395,6 @@ public class MineClawd {
                 : runtime.ownerKey();
         MineClawdConfig config = MineClawdConfig.get();
         
-        // 首先尝试使用插件化架构执行工具
-        if (pluginIntegration != null && pluginIntegration.isInitialized()) {
-            // 将参数转换为Map格式
-            Map<String, Object> pluginArgs = convertJsonToMap(args);
-            pluginArgs.put("tool_name", toolName);
-            
-            String pluginResult = pluginIntegration.executePluginTool(toolName, pluginArgs);
-            if (!pluginResult.startsWith("ERROR: 工具")) {
-                return pluginResult;
-            }
-        }
-        
-        // 如果插件化架构中找不到，使用原有的硬编码逻辑
         ToolExecutionResult result;
         switch (toolName) {
             case TOOL_APPLY_INSTANT_SERVER_SCRIPT:
