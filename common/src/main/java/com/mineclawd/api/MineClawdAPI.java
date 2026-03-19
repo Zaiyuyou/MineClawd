@@ -1,123 +1,64 @@
 package com.mineclawd.api;
 
-import com.mineclawd.tool_sys.plugin.PluginToolProvider;
-import com.mineclawd.tool_sys.plugin.MineClawdPluginIntegration;
-import com.mineclawd.MineClawd;
+import com.mineclawd.agent.Agent;
+import com.mineclawd.agent.interfaces.SkillInterface;
+import com.mineclawd.agent.interfaces.ToolInterface;
+import com.mineclawd.agent.interfaces.WorkflowInterface;
 
 /**
- * MineClawd API接口
- * 为其他mod提供标准化的集成接口
+ * MineClawd API 接口
+ * 定义了外挂 Mod 可以使用的 API 方法
+ * 
+ * <p>这是外挂插件系统的核心接口，外挂 Mod 通过此接口与 MineClawd 交互</p>
+ * 
+ * <p>API 方法包括：</p>
+ * <ul>
+ *   <li>registerTool(): 注册工具</li>
+ *   <li>registerWorkflow(): 注册工作流</li>
+ *   <li>registerSkill(): 注册技能</li>
+ *   <li>getAgent(): 获取 Agent</li>
+ * </ul>
+ * 
+ * @author MineClawd Team
+ * @version 1.0.0
+ * @since 2026-03-17
  */
-public final class MineClawdAPI {
-    
-    private MineClawdAPI() {
-        // 私有构造函数，防止实例化
-    }
+public interface MineClawdAPI {
     
     /**
-     * 注册工具插件
-     * @param plugin 工具插件实例
-     * @return 注册是否成功
+     * 注册工具
+     * 
+     * <p>外挂 Mod 可以通过此方法注册自定义工具</p>
+     * 
+     * @param tool 工具接口
      */
-    public static boolean registerPlugin(MineClawdPluginIntegration plugin) {
-        if (plugin != null) {
-            com.mineclawd.tool_sys.ToolRegistry.loadFromPlugins(plugin.getToolProvider());
-            return true;
-        }
-        return false;
-    }
+    void registerTool(ToolInterface tool);
     
     /**
-     * 启用工具插件
-     * @param pluginId 插件ID
-     * @return 启用是否成功
+     * 注册工作流
+     * 
+     * <p>外挂 Mod 可以通过此方法注册自定义工作流</p>
+     * 
+     * @param workflow 工作流接口
      */
-    public static boolean enablePlugin(String pluginId) {
-        // 新的插件系统将在需要时动态初始化
-        return true;
-    }
+    void registerWorkflow(WorkflowInterface workflow);
     
     /**
-     * 禁用工具插件
-     * @param pluginId 插件ID
-     * @return 禁用是否成功
+     * 注册技能
+     * 
+     * <p>外挂 Mod 可以通过此方法注册自定义技能</p>
+     * 
+     * @param skill 技能接口
      */
-    public static boolean disablePlugin(String pluginId) {
-        // 新的插件系统将在需要时动态初始化
-        return true;
-    }
+    void registerSkill(SkillInterface skill);
     
     /**
-     * 卸载工具插件
-     * @param pluginId 插件ID
-     * @return 卸载是否成功
+     * 获取 Agent
+     * 
+     * <p>外挂 Mod 可以通过此方法获取指定所有者的 Agent</p>
+     * 
+     * @param ownerKey 所有者键
+     * @return Agent 实例
      */
-    public static boolean unregisterPlugin(String pluginId) {
-        // 新的插件系统将在需要时动态初始化
-        return true;
-    }
-    
-    /**
-     * 注册工具执行器
-     * @param executor 工具执行器实例
-     * @return 注册是否成功
-     */
-    public static boolean registerToolExecutor(Object executor) {
-        // 新的插件系统使用注解驱动，无需手动注册
-        return true;
-    }
-    
-    /**
-     * 注销工具执行器
-     * @param toolName 工具名称
-     * @return 注销是否成功
-     */
-    public static boolean unregisterToolExecutor(String toolName) {
-        // 新的插件系统将在需要时动态管理
-        return true;
-    }
-    
-    /**
-     * 检查插件是否已启用
-     * @param pluginId 插件ID
-     * @return 是否已启用
-     */
-    public static boolean isPluginEnabled(String pluginId) {
-        // 新的插件系统将在需要时动态管理
-        return true;
-    }
-    
-    /**
-     * 检查工具是否存在
-     * @param toolName 工具名称
-     * @return 是否存在
-     */
-    public static boolean hasTool(String toolName) {
-        // 新的插件系统将在需要时动态管理
-        return false;
-    }
-    
-    /**
-     * 重新加载所有工具定义
-     * 在动态添加/移除插件后调用此方法
-     */
-    public static void reloadTools() {
-        com.mineclawd.tool_sys.ToolRegistry.reloadAll(null);
-    }
-    
-    /**
-     * 获取API版本
-     * @return API版本号
-     */
-    public static String getAPIVersion() {
-        return "1.0.0";
-    }
-    
-    /**
-     * 获取MineClawd版本
-     * @return MineClawd版本号
-     */
-    public static String getMineClawdVersion() {
-        return "1.7.1-Zaiyuyou-fork";
-    }
+    Agent getAgent(String ownerKey);
 }
