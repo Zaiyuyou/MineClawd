@@ -1,6 +1,6 @@
 package com.mineclawd;
 
-// import de.themoep.minedown.adventure.MineDown; // MineDown library not available
+import de.themoep.minedown.adventure.MineDown;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -43,11 +43,6 @@ import com.mineclawd.foundation.session.SessionManager.SessionData;
 import com.mineclawd.foundation.session.SessionManager.SessionSummary;
 import com.mineclawd.foundation.session.SessionOverlayPayload;
 import com.mineclawd.buildin.web.SearchToolExecutor;
-import com.mineclawd.foundation.tool.ToolRegistry;
-import com.mineclawd.foundation.tool.MineClawdTool;
-import com.mineclawd.foundation.tool.ToolExecutorWrapper;
-import com.mineclawd.foundation.tool.ToolStatusDescriptor;
-
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.Suggestions;
@@ -135,36 +130,35 @@ public class MineClawd {
     private static final ConcurrentHashMap<UUID, Boolean> CLIENT_MOD_READY = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Boolean> CLIENT_GUI_ENABLED = new ConcurrentHashMap<>();
 
-    // 旧架构的硬编码 tool name 常量（已迁移到 ToolRegistry，不再使用）
-    // private static final String TOOL_APPLY_INSTANT_SERVER_SCRIPT = "apply-instant-server-script";
-    // private static final String TOOL_ASK_USER = "ask-user-question";
-    // private static final String TOOL_EXECUTE_COMMAND = "execute-command";
-    // private static final String TOOL_SEARCH = "search";
-    // private static final String TOOL_LIST_COMMANDS = "list_commands";
-    // private static final String TOOL_FETCH_MODRINTH = "fetch_modrinth";
-    // private static final String TOOL_FETCH_URL = "fetch_url";
-    // private static final String TOOL_LIST_FILES = "list-files";
-    // private static final String TOOL_READ_FILES = "read-files";
-    // private static final String TOOL_WRITE_FILES = "write-files";
-    // private static final String TOOL_COPY_FILES = "copy-files";
-    // private static final String TOOL_MOVE_FILES = "move-files";
-    // private static final String TOOL_GREP = "grep";
-    // private static final String TOOL_CURL = "curl";
-    // private static final String TOOL_READ_IMAGE = "read-image";
-    // private static final String TOOL_RELOAD_GAME = "reload-game";
-    // private static final String TOOL_SYNC_COMMAND_TREE = "sync-command-tree";
-    // private static final String TOOL_LIST_DYNAMIC_CONTENT = "list-dynamic-content";
-    // private static final String TOOL_REGISTER_DYNAMIC_ITEM = "register-dynamic-item";
-    // private static final String TOOL_REGISTER_DYNAMIC_BLOCK = "register-dynamic-block";
-    // private static final String TOOL_REGISTER_DYNAMIC_FLUID = "register-dynamic-fluid";
-    // private static final String TOOL_UPDATE_DYNAMIC_ITEM = "update-dynamic-item";
-    // private static final String TOOL_UPDATE_DYNAMIC_BLOCK = "update-dynamic-block";
-    // private static final String TOOL_UPDATE_DYNAMIC_FLUID = "update-dynamic-fluid";
-    // private static final String TOOL_UNREGISTER_DYNAMIC_CONTENT = "unregister-dynamic-content";
-    // private static final String TOOL_LIST_ASSETS = "list-assets";
-    // private static final String TOOL_UPSERT_ASSET_RECORD = "upsert-asset-record";
-    // private static final String TOOL_REMOVE_ASSET_RECORD = "remove-asset-record";
-    // private static final String LEGACY_TOOL_KUBEJS_EVAL = "kubejs_eval";
+    private static final String TOOL_APPLY_INSTANT_SERVER_SCRIPT = "apply-instant-server-script";
+    private static final String TOOL_ASK_USER = "ask-user-question";
+    private static final String TOOL_EXECUTE_COMMAND = "execute-command";
+    private static final String TOOL_SEARCH = "search";
+    private static final String TOOL_LIST_COMMANDS = "list_commands";
+    private static final String TOOL_FETCH_MODRINTH = "fetch_modrinth";
+    private static final String TOOL_FETCH_URL = "fetch_url";
+    private static final String TOOL_LIST_FILES = "list-files";
+    private static final String TOOL_READ_FILES = "read-files";
+    private static final String TOOL_WRITE_FILES = "write-files";
+    private static final String TOOL_COPY_FILES = "copy-files";
+    private static final String TOOL_MOVE_FILES = "move-files";
+    private static final String TOOL_GREP = "grep";
+    private static final String TOOL_CURL = "curl";
+    private static final String TOOL_READ_IMAGE = "read-image";
+    private static final String TOOL_RELOAD_GAME = "reload-game";
+    private static final String TOOL_SYNC_COMMAND_TREE = "sync-command-tree";
+    private static final String TOOL_LIST_DYNAMIC_CONTENT = "list-dynamic-content";
+    private static final String TOOL_REGISTER_DYNAMIC_ITEM = "register-dynamic-item";
+    private static final String TOOL_REGISTER_DYNAMIC_BLOCK = "register-dynamic-block";
+    private static final String TOOL_REGISTER_DYNAMIC_FLUID = "register-dynamic-fluid";
+    private static final String TOOL_UPDATE_DYNAMIC_ITEM = "update-dynamic-item";
+    private static final String TOOL_UPDATE_DYNAMIC_BLOCK = "update-dynamic-block";
+    private static final String TOOL_UPDATE_DYNAMIC_FLUID = "update-dynamic-fluid";
+    private static final String TOOL_UNREGISTER_DYNAMIC_CONTENT = "unregister-dynamic-content";
+    private static final String TOOL_LIST_ASSETS = "list-assets";
+    private static final String TOOL_UPSERT_ASSET_RECORD = "upsert-asset-record";
+    private static final String TOOL_REMOVE_ASSET_RECORD = "remove-asset-record";
+    private static final String LEGACY_TOOL_KUBEJS_EVAL = "kubejs_eval";
     private static final int TOOL_LIMIT_MIN = 1;
     private static final int TOOL_LIMIT_MAX = 20;
     private static final int MAX_REPEAT_TOOL_CALLS = 1;
@@ -304,19 +298,24 @@ public class MineClawd {
         "  6. Do NOT proceed with KubeJS content generation until documentation is verified available",
         "",
         "— ACTION & EXECUTION —",
-        "  You have access to various tools for in-game actions and script execution.",
-        "  When you need to perform an action, use the appropriate tool.",
-        "  Tool details will be provided when you need to use them.",
-        "",
-        "  Available tool categories:",
-        "  - Command execution tools",
-        "  - Script execution tools",
-        "  - File management tools",
-        "  - Web interaction tools",
-        "  - Game management tools",
-        "",
-        "  Predefined variables: source, server, level, player (any may be null).",
-        "  If server is null, use Utils.getServer().",
+        "  `execute-command`    Run a vanilla Minecraft command and return its output.",
+        "    Prefer this for: gamerule, time, weather, tp, effect, give, clear, kill,",
+        "    summon, setblock, fill, say, and simple state checks.",
+        "    If command output is sufficient, skip KubeJS entirely.",
+        "  `apply-instant-server-script`",
+        "    Execute KubeJS JavaScript immediately on the running server via /_exec_kubejs_internal.",
+        "    Use for one-off operations: inventory inspection/editing, nearby block changes,",
+        "    entity queries, or any ad-hoc server action.",
+        "    Multi-line code may include normal newline characters; they are converted to \\n before",
+        "    execution. No reload required.",
+        "    Predefined variables: source, server, level, player (any may be null).",
+        "    If server is null, use Utils.getServer().",
+        "  `write-files`          Write text files. Especially KubeJS server scripts.",
+        "  `copy-files`           Copy files/directories.",
+        "  `move-files`           Move/rename files/directories.",
+        "  `curl`                 Perform HTTP requests and return response details. Use this for downloading files. If you just need to fetch text content, prefer `fetch_url` which is more llm-friendly.",
+        "  `reload-game`          Run /reload, return KubeJS loading errors.",
+        "  `sync-command-tree`    Push refreshed command suggestions to online players.",
         "    Call ONLY when command registrations changed AND reload already succeeded.",
         "",
         "  All file paths are server-root-relative (the folder containing world/, logs/, mods/,",
@@ -485,10 +484,6 @@ public class MineClawd {
 
         KubeJsScriptManager.ensureScriptInGameDir();
         MineClawdNetworking.register();
-        
-        // 注册内置工具到 ToolRegistry
-        registerBuiltInTools();
-        
         PlayerEvent.PLAYER_JOIN.register(player -> {
             MinecraftServer server = player.getServer();
             if (server == null) {
@@ -642,13 +637,6 @@ public class MineClawd {
             return EventResult.interruptFalse();
         });
         CommandRegistrationEvent.EVENT.register(instance::registerCommands);
-        
-        // 监听reload事件，自动重载工具
-        LifecycleEvent.SERVER_STARTED.register(server -> {
-            LOGGER.info("Server started, reloading tools for new session");
-            com.mineclawd.foundation.tool.ToolRegistry.reloadBuiltInTools();
-        });
-        
         LOGGER.info("MineClawd initialized. /mineclawd is ready for the agent loop.");
     }
 
@@ -779,29 +767,7 @@ public class MineClawd {
                                 .executes(context -> {
                                     String request = StringArgumentType.getString(context, "request");
                                     return handleRequest(context.getSource(), request);
-                                })))
-                .then(CommandManager.literal("tools")
-                        .executes(context -> listTools(context.getSource()))
-                        .then(CommandManager.literal("enable")
-                                .then(CommandManager.argument("tool", StringArgumentType.word())
-                                        .suggests((context, builder) -> suggestToolName(context.getSource(), builder))
-                                        .executes(context -> {
-                                            String toolName = StringArgumentType.getString(context, "tool");
-                                            return enableTool(context.getSource(), toolName);
-                                        })
-                                )
-                        )
-                        .then(CommandManager.literal("disable")
-                                .then(CommandManager.argument("tool", StringArgumentType.word())
-                                        .suggests((context, builder) -> suggestToolName(context.getSource(), builder))
-                                        .executes(context -> {
-                                            String toolName = StringArgumentType.getString(context, "tool");
-                                            return disableTool(context.getSource(), toolName);
-                                        })
-                                )
-                        )
-                        .then(CommandManager.literal("reload")
-                                .executes(context -> reloadTools(context.getSource())))));
+                                }))));
 
         dispatcher.register(CommandManager.literal("mclawd")
                 .requires(this::isOp)
@@ -1827,78 +1793,6 @@ public class MineClawd {
         return CommandSource.suggestMatching(candidates, builder);
     }
 
-    private CompletableFuture<Suggestions> suggestToolName(ServerCommandSource source, SuggestionsBuilder builder) {
-        if (source == null || !isOp(source)) {
-            return Suggestions.empty();
-        }
-        List<String> toolNames = new ArrayList<>(com.mineclawd.foundation.tool.ToolRegistry.getAll().keySet());
-        return CommandSource.suggestMatching(toolNames, builder);
-    }
-
-    private int listTools(ServerCommandSource source) {
-        if (!isOp(source)) {
-            return 0;
-        }
-        
-        Map<String, com.mineclawd.foundation.tool.MineClawdTool> tools = com.mineclawd.foundation.tool.ToolRegistry.getAll();
-        
-        sendAgentMessage(source, "=== 可用工具列表 ===");
-        for (Map.Entry<String, com.mineclawd.foundation.tool.MineClawdTool> entry : tools.entrySet()) {
-            String toolName = entry.getKey();
-            com.mineclawd.foundation.tool.MineClawdTool tool = entry.getValue();
-            boolean enabled = com.mineclawd.foundation.tool.ToolRegistry.isEnabled(toolName);
-            String status = enabled ? "§a启用" : "§c禁用";
-            String category = tool.getPromptCategory() != null ? tool.getPromptCategory() : "General";
-            
-            sendAgentMessage(source, String.format("- %s [%s] (%s): %s", 
-                toolName, status, category, tool.getDescription()));
-        }
-        sendAgentMessage(source, "使用 /mineclawd tools enable <工具名> 或 /mineclawd tools disable <工具名> 管理工具状态");
-        
-        return 1;
-    }
-
-    private int enableTool(ServerCommandSource source, String toolName) {
-        if (!isOp(source)) {
-            return 0;
-        }
-        
-        boolean success = com.mineclawd.foundation.tool.ToolRegistry.enable(toolName);
-        if (success) {
-            sendAgentMessage(source, "§a工具已启用: " + toolName);
-        } else {
-            sendAgentMessage(source, "§c启用工具失败: " + toolName + " (工具不存在)");
-        }
-        
-        return success ? 1 : 0;
-    }
-
-    private int disableTool(ServerCommandSource source, String toolName) {
-        if (!isOp(source)) {
-            return 0;
-        }
-        
-        boolean success = com.mineclawd.foundation.tool.ToolRegistry.disable(toolName);
-        if (success) {
-            sendAgentMessage(source, "§c工具已禁用: " + toolName);
-        } else {
-            sendAgentMessage(source, "§c禁用工具失败: " + toolName + " (工具不存在)");
-        }
-        
-        return success ? 1 : 0;
-    }
-
-    private int reloadTools(ServerCommandSource source) {
-        if (!isOp(source)) {
-            return 0;
-        }
-        
-        com.mineclawd.foundation.tool.ToolRegistry.reloadBuiltInTools();
-        sendAgentMessage(source, "§a工具已重新加载");
-        
-        return 1;
-    }
-
     private int resumeSession(ServerCommandSource source, String sessionRef) {
         if (!isOp(source)) {
             source.sendError(Text.literal("MineClawd: only OP users can run this command."));
@@ -2466,11 +2360,6 @@ public class MineClawd {
         }
         try {
             String systemPrompt = buildSystemPrompt(source, config, ownerKey, runtime.dynamicRegistryEnabled(), session);
-            
-            // 调试：记录系统提示词长度
-            debugResponseLength(runtime, "System Prompt", systemPrompt.length(), 
-                "Session: " + (session != null ? session.id() : "new"));
-            
             if (provider == MineClawdConfig.LlmProvider.OPENAI) {
                 List<OpenAIMessage> history;
                 if (runtime.sessionBacked() && session != null) {
@@ -2478,17 +2367,8 @@ public class MineClawd {
                     ensureOpenAiHistory(history, systemPrompt);
                     if (preparedPrompt.openAiParts().isEmpty()) {
                         history.add(OpenAIMessage.user(promptForModel));
-                        // 调试：记录用户请求长度
-                        debugResponseLength(runtime, "User Request", promptForModel.length(), 
-                            "Type: Text");
                     } else {
                         history.add(OpenAIMessage.userWithParts(promptForModel, preparedPrompt.openAiParts()));
-                        // 调试：记录用户请求长度（包含parts）
-                        int totalLength = promptForModel.length() + preparedPrompt.openAiParts().stream()
-                            .mapToInt(part -> part.toString().length())
-                            .sum();
-                        debugResponseLength(runtime, "User Request", totalLength, 
-                            "Type: Multi-part");
                     }
                     session.touch();
                     SESSION_MANAGER.saveSession(ownerKey, session);
@@ -2950,12 +2830,6 @@ public class MineClawd {
         if (toolCalls != null && !toolCalls.isEmpty()) {
             final boolean hadAssistantTextBeforeTools = text != null && !text.isBlank();
             history.add(OpenAIMessage.assistant(text, toolCalls));
-            
-            // 调试：记录助手响应长度（包含工具调用）
-            int assistantLength = text != null ? text.length() : 0;
-            debugResponseLength(runtime, "Assistant Response", assistantLength, 
-                "Type: With Tool Calls, Count: " + toolCalls.size());
-            
             executeOpenAiToolCallsAsync(source, toolCalls, runtime)
                     .whenComplete((batch, batchError) -> {
                         if (source.getServer() == null) {
@@ -2992,12 +2866,6 @@ public class MineClawd {
         }
 
         history.add(OpenAIMessage.assistant(text, null));
-        
-        // 调试：记录助手响应长度（纯文本）
-        int assistantLength = text != null ? text.length() : 0;
-        debugResponseLength(runtime, "Assistant Response", assistantLength, 
-            "Type: Text Only");
-        
         if (session != null) {
             session.touch();
             SESSION_MANAGER.saveSession(runtime.ownerKey(), session);
@@ -3246,10 +3114,6 @@ public class MineClawd {
         int callIndex = index + 1;
         ToolStatusDescriptor statusDescriptor = announceToolCallProgress(source, runtime, call.name(), args);
         ToolStatusDescriptor completionDescriptor = buildToolStatusCompletedDescriptor(call.name(), args);
-        
-        // 获取该 tool 的 appendix 并添加到 results 中
-        // String toolAppendix = ToolRegistry.getEnabledToolAppendixes().get(call.name());
-        
         debugLog(runtime, "Executing tool (OpenAI) #%d name=%s args=%s", callIndex, call.name(), args);
         return executeToolCallAsync(source, call.name(), args, runtime)
                 .handle((output, throwable) -> {
@@ -3266,31 +3130,9 @@ public class MineClawd {
                     if (toolCallId == null || toolCallId.isBlank()) {
                         toolCallId = "unknown";
                     }
-                    
-                    // // 如果有 appendix，先添加 appendix 作为 system 消息（符合OpenAI API规范）
-                    // if (toolAppendix != null && !toolAppendix.isBlank()) {
-                    //     results.add(OpenAIMessage.system("Tool Details:\n" + toolAppendix));
-                    // }
-                    
-                    // 使用符合OpenAI API规范的响应格式
-                    JsonObject apiCompliantResponse = new JsonObject();
-                    if (throwable != null || finalOutput.startsWith("ERROR:")) {
-                        apiCompliantResponse.addProperty("error", finalOutput);
-                        apiCompliantResponse.addProperty("success", false);
-                    } else {
-                        apiCompliantResponse.addProperty("result", finalOutput);
-                        apiCompliantResponse.addProperty("success", true);
-                    }
-                    
-                    // tool 消息包含符合API规范的JSON响应
-                    String apiResponse = apiCompliantResponse.toString();
-                    results.add(OpenAIMessage.tool(toolCallId, apiResponse));
+                    results.add(OpenAIMessage.tool(toolCallId, finalOutput));
                     outputs.add(finalOutput);
                     signatures.add(call.name() + ":" + args);
-                    
-                    // 调试：记录响应长度
-                    debugResponseLength(runtime, "OpenAI Tool Response", apiResponse.length(), 
-                        "Tool: " + call.name() + ", CallID: " + toolCallId);
                     return null;
                 })
                 .thenCompose(unused -> executeOpenAiToolCallsSequential(
@@ -3352,10 +3194,6 @@ public class MineClawd {
         int callIndex = index + 1;
         ToolStatusDescriptor statusDescriptor = announceToolCallProgress(source, runtime, call.name(), args);
         ToolStatusDescriptor completionDescriptor = buildToolStatusCompletedDescriptor(call.name(), args);
-        
-        // 获取该 tool 的 appendix（VertexAI API规范）
-        String toolAppendix = ToolRegistry.getEnabledToolAppendixes().get(call.name());
-        
         debugLog(runtime, "Executing tool (Vertex) #%d name=%s args=%s", callIndex, call.name(), args);
         return executeToolCallAsync(source, call.name(), args, runtime)
                 .handle((output, throwable) -> {
@@ -3369,31 +3207,11 @@ public class MineClawd {
                     debugLog(runtime, "Tool output #%d: %s", callIndex, finalOutput);
                     agentLog(runtime, "Tool result: %s -> %s", call.name(), finalOutput);
                     JsonObject response = new JsonObject();
-                    if (throwable != null || finalOutput.startsWith("ERROR:")) {
-                        response.addProperty("error", finalOutput);
-                        response.addProperty("success", false);
-                    } else {
-                        response.addProperty("result", finalOutput);
-                        response.addProperty("success", true);
-                    }
-                    
-                    // 如果有 appendix，先添加 appendix 作为 function response
-                    if (toolAppendix != null && !toolAppendix.isBlank()) {
-                        JsonObject appendixResponse = new JsonObject();
-                        appendixResponse.addProperty("result", "Tool Details:\n" + toolAppendix);
-                        appendixResponse.addProperty("success", true);
-                        responseParts.add(VertexAIMessage.functionResponsePart(call.name(), appendixResponse));
-                    }
-                    
-                    // 调试：记录响应长度
-                    String responseJson = response.toString();
+                    response.addProperty("result", finalOutput);
+                    response.addProperty("is_error", finalOutput.startsWith("ERROR:"));
                     responseParts.add(VertexAIMessage.functionResponsePart(call.name(), response));
                     outputs.add(finalOutput);
                     signatures.add(call.name() + ":" + args);
-                    
-                    // 调试：记录响应长度
-                    debugResponseLength(runtime, "VertexAI Tool Response", responseJson.length(), 
-                        "Tool: " + call.name());
                     return null;
                 })
                 .thenCompose(unused -> executeVertexToolCallsSequential(
@@ -3413,23 +3231,9 @@ public class MineClawd {
             JsonObject args,
             AgentRuntime runtime
     ) {
-        // 从 ToolRegistry 获取工具
-        MineClawdTool tool = ToolRegistry.get(toolName);
-        if (tool == null) {
-            return CompletableFuture.completedFuture("ERROR: Unknown tool " + toolName);
+        if (TOOL_ASK_USER.equals(toolName)) {
+            return askUserQuestion(source, args, runtime);
         }
-        
-        // 特殊处理异步工具（如 ask-user-question）
-        if (tool.supportsAsync()) {
-            // 异步工具需要特殊处理
-            if ("ask-user-question".equals(toolName)) {
-                return askUserQuestion(source, args, runtime);
-            }
-            // 其他异步工具使用默认异步执行
-            return CompletableFuture.supplyAsync(() -> executeToolCallSync(source, toolName, args, runtime));
-        }
-        
-        // 否则同步执行
         return CompletableFuture.completedFuture(executeToolCallSync(source, toolName, args, runtime));
     }
 
@@ -3443,17 +3247,214 @@ public class MineClawd {
         String ownerKey = runtime == null || runtime.ownerKey() == null || runtime.ownerKey().isBlank()
                 ? sessionOwnerKey(source)
                 : runtime.ownerKey();
-        
-        // 从 ToolRegistry 获取工具
-        MineClawdTool tool = ToolRegistry.get(toolName);
-        if (tool == null) {
-            return "ERROR: Unknown tool " + toolName;
+        MineClawdConfig config = MineClawdConfig.get();
+        ToolExecutionResult result;
+        switch (toolName) {
+            case TOOL_APPLY_INSTANT_SERVER_SCRIPT:
+            case LEGACY_TOOL_KUBEJS_EVAL:
+                String code = readRequiredStringArg(args, "code");
+                if (code == null || code.isBlank()) {
+                    return "ERROR: Tool call is missing required string `code`.";
+                }
+                result = KubeJsToolExecutor.executeInstant(source, code);
+                break;
+            case TOOL_EXECUTE_COMMAND:
+                String command = readRequiredStringArg(args, "command");
+                if (command == null || command.isBlank()) {
+                    return "ERROR: Tool call is missing required string `command`.";
+                }
+                result = KubeJsToolExecutor.executeCommand(source, command);
+                break;
+            case TOOL_SEARCH:
+                if (!hasConfiguredTavilyKey(config)) {
+                    return "ERROR: Search tool is disabled. Configure `tavily-api-key` first.";
+                }
+                String query = readRequiredStringArg(args, "query");
+                if (query == null || query.isBlank()) {
+                    return "ERROR: Tool call is missing required string `query`.";
+                }
+                result = SearchToolExecutor.searchWeb(config.tavilyApiKey, query, readOptionalIntArg(args, "max_results"));
+                break;
+            case TOOL_LIST_COMMANDS:
+                result = ModDocsToolExecutor.listCommands(source, readOptionalStringArg(args, "mod_id"));
+                break;
+            case TOOL_FETCH_MODRINTH:
+                String modrinthModId = readRequiredStringArg(args, "mod_id");
+                if (modrinthModId == null || modrinthModId.isBlank()) {
+                    return "ERROR: Tool call is missing required string `mod_id`.";
+                }
+                result = ModDocsToolExecutor.fetchModrinth(modrinthModId);
+                break;
+            case TOOL_FETCH_URL:
+                String docsUrl = readRequiredStringArg(args, "url");
+                if (docsUrl == null || docsUrl.isBlank()) {
+                    return "ERROR: Tool call is missing required string `url`.";
+                }
+                result = ModDocsToolExecutor.fetchUrl(docsUrl);
+                break;
+            case TOOL_LIST_FILES:
+                result = WorkspaceFileToolExecutor.listFiles(
+                        source,
+                        readOptionalStringArg(args, "path"),
+                        readOptionalBooleanArg(args, "recursive"),
+                        readOptionalIntArg(args, "limit")
+                );
+                break;
+            case TOOL_READ_FILES:
+                String readPath = readRequiredStringArg(args, "path");
+                if (readPath == null || readPath.isBlank()) {
+                    return "ERROR: Tool call is missing required string `path`.";
+                }
+                result = WorkspaceFileToolExecutor.readFile(source, readPath);
+                break;
+            case TOOL_WRITE_FILES:
+                String writePath = readRequiredStringArg(args, "path");
+                if (writePath == null || writePath.isBlank()) {
+                    return "ERROR: Tool call is missing required string `path`.";
+                }
+                String content = readRequiredStringArg(args, "content");
+                if (content == null) {
+                    return "ERROR: Tool call is missing required string `content`.";
+                }
+                result = WorkspaceFileToolExecutor.writeFile(source, writePath, content);
+                break;
+            case TOOL_COPY_FILES:
+                String fromPath = readRequiredStringArg(args, "from");
+                String toPath = readRequiredStringArg(args, "to");
+                if (fromPath == null || fromPath.isBlank() || toPath == null || toPath.isBlank()) {
+                    return "ERROR: Tool call requires string `from` and `to`.";
+                }
+                result = WorkspaceFileToolExecutor.copyFiles(source, fromPath, toPath);
+                break;
+            case TOOL_MOVE_FILES:
+                String moveFromPath = readRequiredStringArg(args, "from");
+                String moveToPath = readRequiredStringArg(args, "to");
+                if (moveFromPath == null || moveFromPath.isBlank() || moveToPath == null || moveToPath.isBlank()) {
+                    return "ERROR: Tool call requires string `from` and `to`.";
+                }
+                result = WorkspaceFileToolExecutor.moveFiles(source, moveFromPath, moveToPath);
+                break;
+            case TOOL_GREP:
+                String pattern = readRequiredStringArg(args, "pattern");
+                if (pattern == null || pattern.isBlank()) {
+                    return "ERROR: Tool call is missing required string `pattern`.";
+                }
+                result = WorkspaceFileToolExecutor.grepFiles(
+                        source,
+                        pattern,
+                        readOptionalStringArg(args, "path"),
+                        readOptionalStringArg(args, "glob"),
+                        readOptionalBooleanArg(args, "case_sensitive"),
+                        readOptionalIntArg(args, "max_matches")
+                );
+                break;
+            case TOOL_CURL:
+                String url = readRequiredStringArg(args, "url");
+                if (url == null || url.isBlank()) {
+                    return "ERROR: Tool call is missing required string `url`.";
+                }
+                result = WorkspaceFileToolExecutor.curl(
+                        url,
+                        readOptionalStringArg(args, "method"),
+                        readOptionalStringArg(args, "body"),
+                        readOptionalStringMapArg(args, "headers"),
+                        readOptionalIntArg(args, "timeout_seconds")
+                );
+                break;
+            case TOOL_READ_IMAGE:
+                String imagePath = readRequiredStringArg(args, "path");
+                if (imagePath == null || imagePath.isBlank()) {
+                    return "ERROR: Tool call is missing required string `path`.";
+                }
+                result = readImageTool(source, runtime, imagePath, readOptionalStringArg(args, "prompt"));
+                break;
+            case TOOL_RELOAD_GAME:
+                result = KubeJsToolExecutor.reloadGame(source);
+                break;
+            case TOOL_SYNC_COMMAND_TREE:
+                result = KubeJsToolExecutor.syncCommandTree(source);
+                break;
+            case TOOL_LIST_DYNAMIC_CONTENT:
+                result = DynamicContentToolExecutor.list();
+                break;
+            case TOOL_REGISTER_DYNAMIC_ITEM:
+                result = DynamicContentToolExecutor.registerItem(
+                        source,
+                        readOptionalIntArg(args, "slot"),
+                        readRequiredStringArg(args, "name"),
+                        readRequiredStringArg(args, "material_item"),
+                        readOptionalBooleanArg(args, "throwable")
+                );
+                break;
+            case TOOL_REGISTER_DYNAMIC_BLOCK:
+                result = DynamicContentToolExecutor.registerBlock(
+                        source,
+                        readOptionalIntArg(args, "slot"),
+                        readRequiredStringArg(args, "name"),
+                        readRequiredStringArg(args, "material_block"),
+                        readOptionalDoubleArg(args, "friction")
+                );
+                break;
+            case TOOL_REGISTER_DYNAMIC_FLUID:
+                result = DynamicContentToolExecutor.registerFluid(
+                        source,
+                        readOptionalIntArg(args, "slot"),
+                        readRequiredStringArg(args, "name"),
+                        readRequiredStringArg(args, "material_fluid"),
+                        readRequiredStringArg(args, "color")
+                );
+                break;
+            case TOOL_UPDATE_DYNAMIC_ITEM:
+                result = DynamicContentToolExecutor.updateItem(
+                        source,
+                        readOptionalIntArg(args, "slot"),
+                        readRequiredStringArg(args, "name"),
+                        readRequiredStringArg(args, "material_item"),
+                        readOptionalBooleanArg(args, "throwable")
+                );
+                break;
+            case TOOL_UPDATE_DYNAMIC_BLOCK:
+                result = DynamicContentToolExecutor.updateBlock(
+                        source,
+                        readOptionalIntArg(args, "slot"),
+                        readRequiredStringArg(args, "name"),
+                        readRequiredStringArg(args, "material_block"),
+                        readOptionalDoubleArg(args, "friction")
+                );
+                break;
+            case TOOL_UPDATE_DYNAMIC_FLUID:
+                result = DynamicContentToolExecutor.updateFluid(
+                        source,
+                        readOptionalIntArg(args, "slot"),
+                        readRequiredStringArg(args, "name"),
+                        readRequiredStringArg(args, "material_fluid"),
+                        readRequiredStringArg(args, "color")
+                );
+                break;
+            case TOOL_UNREGISTER_DYNAMIC_CONTENT:
+                result = DynamicContentToolExecutor.unregister(
+                        source,
+                        readRequiredStringArg(args, "type"),
+                        readOptionalIntArg(args, "slot")
+                );
+                break;
+            case TOOL_LIST_ASSETS:
+                result = listAssetsTool(ownerKey);
+                break;
+            case TOOL_UPSERT_ASSET_RECORD:
+                result = upsertAssetRecordTool(ownerKey, args);
+                break;
+            case TOOL_REMOVE_ASSET_RECORD:
+                result = removeAssetRecordTool(ownerKey, args);
+                break;
+            default:
+                return "ERROR: Unknown tool " + toolName;
         }
-        
-        ToolExecutorWrapper wrapper = new ToolExecutorWrapper(tool);
-        String result = wrapper.execute(source, args);
-        
-        return result;
+
+        if (result.success()) {
+            return result.output();
+        }
+        return "ERROR: " + result.output();
     }
 
     private JsonObject parseToolArguments(String arguments) {
@@ -4614,34 +4615,306 @@ public class MineClawd {
     }
 
     private List<OpenAITool> openAiTools(boolean dynamicRegistryEnabled, boolean searchEnabled) {
-        List<OpenAITool> tools = new ArrayList<>();
-        
-        // 从 ToolRegistry 获取所有启用的工具
-        Map<String, MineClawdTool> enabledTools = ToolRegistry.getAllEnabled();
-        enabledTools.forEach((name, tool) -> {
-            ToolExecutorWrapper wrapper = new ToolExecutorWrapper(tool);
-            OpenAITool openAITool = wrapper.toOpenAITool();
-            if (openAITool != null) {
-                tools.add(openAITool);
-            }
-        });
-        
+        List<OpenAITool> tools = new ArrayList<>(List.of(
+                new OpenAITool(
+                        TOOL_ASK_USER,
+                        "Ask the player a clarification question with up to five preset options. Do not include Other/Skip in options; MineClawd injects Other and handles skip.",
+                        questionToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_APPLY_INSTANT_SERVER_SCRIPT,
+                        "Apply immediate runtime changes by executing KubeJS JavaScript via /_exec_kubejs_internal.",
+                        codeToolParameters("JavaScript code to execute immediately. Supports multi-line strings.")
+                ),
+                new OpenAITool(
+                        TOOL_EXECUTE_COMMAND,
+                        "Execute a Minecraft command and return command output/result.",
+                        commandToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_LIST_COMMANDS,
+                        "List available root commands. Optionally filter with mod_id (best-effort by command name/prefix).",
+                        listCommandsToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_FETCH_MODRINTH,
+                        "Fetch the Modrinth project page content for an installed mod id.",
+                        fetchModrinthToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_FETCH_URL,
+                        "Fetch any HTTP(S) URL and return readable content. HTML is converted to Markdown.",
+                        fetchUrlToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_LIST_FILES,
+                        "List files/directories under the server root. Supports optional path, recursive, and limit.",
+                        listFilesToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_READ_FILES,
+                        "Read a UTF-8 text file under the server root.",
+                        pathToolParameters("Relative file path under the server root, for example `logs/latest.log` or `world/serverconfig/mod.json`.")
+                ),
+                new OpenAITool(
+                        TOOL_WRITE_FILES,
+                        "Write or overwrite a UTF-8 file under the server root.",
+                        writeToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_COPY_FILES,
+                        "Copy a file or directory under the server root.",
+                        copyMoveToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_MOVE_FILES,
+                        "Move or rename a file or directory under the server root.",
+                        copyMoveToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_GREP,
+                        "Search file contents using regex under the server root.",
+                        grepToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_CURL,
+                        "Perform an HTTP request and return status/body.",
+                        curlToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_READ_IMAGE,
+                        "Read and describe an image file under the server root using the configured vision model.",
+                        readImageToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_RELOAD_GAME,
+                        "Run /reload and return command output plus detected KubeJS load errors.",
+                        noArgToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_SYNC_COMMAND_TREE,
+                        "Refresh command tree/tab-completion for all online players. Use only after command registration changes.",
+                        noArgToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_LIST_ASSETS,
+                        "List currently tracked persistent asset records for this player/session owner.",
+                        noArgToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_UPSERT_ASSET_RECORD,
+                        "Create or update an asset tracking record for entities, items/blocks/fluids, special items, commands, or game mechanics.",
+                        assetUpsertToolParameters()
+                ),
+                new OpenAITool(
+                        TOOL_REMOVE_ASSET_RECORD,
+                        "Remove an obsolete asset tracking record by id/reference.",
+                        assetRemoveToolParameters()
+                )
+        ));
+        if (searchEnabled) {
+            tools.add(new OpenAITool(
+                    TOOL_SEARCH,
+                    "Search the web via Tavily and return concise snippets with URLs. Use this when external references are needed.",
+                    searchToolParameters()
+            ));
+        }
+        if (dynamicRegistryEnabled) {
+            tools.addAll(List.of(
+                    new OpenAITool(
+                            TOOL_LIST_DYNAMIC_CONTENT,
+                            "List currently active dynamic placeholder entries and free slots.",
+                            noArgToolParameters()
+                    ),
+                    new OpenAITool(
+                            TOOL_REGISTER_DYNAMIC_ITEM,
+                            "Claim a free dynamic item placeholder slot.",
+                            dynamicItemToolParameters()
+                    ),
+                    new OpenAITool(
+                            TOOL_REGISTER_DYNAMIC_BLOCK,
+                            "Claim a free dynamic block placeholder slot.",
+                            dynamicBlockToolParameters()
+                    ),
+                    new OpenAITool(
+                            TOOL_REGISTER_DYNAMIC_FLUID,
+                            "Claim a free dynamic fluid placeholder slot.",
+                            dynamicFluidToolParameters()
+                    ),
+                    new OpenAITool(
+                            TOOL_UPDATE_DYNAMIC_ITEM,
+                            "Update properties for an existing dynamic item slot.",
+                            dynamicItemUpdateToolParameters()
+                    ),
+                    new OpenAITool(
+                            TOOL_UPDATE_DYNAMIC_BLOCK,
+                            "Update properties for an existing dynamic block slot.",
+                            dynamicBlockUpdateToolParameters()
+                    ),
+                    new OpenAITool(
+                            TOOL_UPDATE_DYNAMIC_FLUID,
+                            "Update properties for an existing dynamic fluid slot.",
+                            dynamicFluidUpdateToolParameters()
+                    ),
+                    new OpenAITool(
+                            TOOL_UNREGISTER_DYNAMIC_CONTENT,
+                            "Release a dynamic placeholder entry by type and slot.",
+                            dynamicUnregisterToolParameters()
+                    )
+            ));
+        }
         return List.copyOf(tools);
     }
 
     private List<VertexAIFunction> vertexTools(boolean dynamicRegistryEnabled, boolean searchEnabled) {
-        List<VertexAIFunction> tools = new ArrayList<>();
-        
-        // 从 ToolRegistry 获取所有启用的工具
-        Map<String, MineClawdTool> enabledTools = ToolRegistry.getAllEnabled();
-        enabledTools.forEach((name, tool) -> {
-            ToolExecutorWrapper wrapper = new ToolExecutorWrapper(tool);
-            VertexAIFunction vertexAIFunction = wrapper.toVertexAIFunction();
-            if (vertexAIFunction != null) {
-                tools.add(vertexAIFunction);
-            }
-        });
-        
+        List<VertexAIFunction> tools = new ArrayList<>(List.of(
+                new VertexAIFunction(
+                        TOOL_ASK_USER,
+                        "Ask the player a clarification question with up to five preset options. Do not include Other/Skip in options; MineClawd injects Other and handles skip.",
+                        questionToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_APPLY_INSTANT_SERVER_SCRIPT,
+                        "Apply immediate runtime changes by executing KubeJS JavaScript via /_exec_kubejs_internal.",
+                        codeToolParameters("JavaScript code to execute immediately. Supports multi-line strings.")
+                ),
+                new VertexAIFunction(
+                        TOOL_EXECUTE_COMMAND,
+                        "Execute a Minecraft command and return command output/result.",
+                        commandToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_LIST_COMMANDS,
+                        "List available root commands. Optionally filter with mod_id (best-effort by command name/prefix).",
+                        listCommandsToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_FETCH_MODRINTH,
+                        "Fetch the Modrinth project page content for an installed mod id.",
+                        fetchModrinthToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_FETCH_URL,
+                        "Fetch any HTTP(S) URL and return readable content. HTML is converted to Markdown.",
+                        fetchUrlToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_LIST_FILES,
+                        "List files/directories under the server root. Supports optional path, recursive, and limit.",
+                        listFilesToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_READ_FILES,
+                        "Read a UTF-8 text file under the server root.",
+                        pathToolParameters("Relative file path under the server root, for example `logs/latest.log` or `world/serverconfig/mod.json`.")
+                ),
+                new VertexAIFunction(
+                        TOOL_WRITE_FILES,
+                        "Write or overwrite a UTF-8 file under the server root.",
+                        writeToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_COPY_FILES,
+                        "Copy a file or directory under the server root.",
+                        copyMoveToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_MOVE_FILES,
+                        "Move or rename a file or directory under the server root.",
+                        copyMoveToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_GREP,
+                        "Search file contents using regex under the server root.",
+                        grepToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_CURL,
+                        "Perform an HTTP request and return status/body.",
+                        curlToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_READ_IMAGE,
+                        "Read and describe an image file under the server root using the configured vision model.",
+                        readImageToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_RELOAD_GAME,
+                        "Run /reload and return command output plus detected KubeJS load errors.",
+                        noArgToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_SYNC_COMMAND_TREE,
+                        "Refresh command tree/tab-completion for all online players. Use only after command registration changes.",
+                        noArgToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_LIST_ASSETS,
+                        "List currently tracked persistent asset records for this player/session owner.",
+                        noArgToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_UPSERT_ASSET_RECORD,
+                        "Create or update an asset tracking record for entities, items/blocks/fluids, special items, commands, or game mechanics.",
+                        assetUpsertToolParameters()
+                ),
+                new VertexAIFunction(
+                        TOOL_REMOVE_ASSET_RECORD,
+                        "Remove an obsolete asset tracking record by id/reference.",
+                        assetRemoveToolParameters()
+                )
+        ));
+        if (searchEnabled) {
+            tools.add(new VertexAIFunction(
+                    TOOL_SEARCH,
+                    "Search the web via Tavily and return concise snippets with URLs. Use this when external references are needed.",
+                    searchToolParameters()
+            ));
+        }
+        if (dynamicRegistryEnabled) {
+            tools.addAll(List.of(
+                    new VertexAIFunction(
+                            TOOL_LIST_DYNAMIC_CONTENT,
+                            "List currently active dynamic placeholder entries and free slots.",
+                            noArgToolParameters()
+                    ),
+                    new VertexAIFunction(
+                            TOOL_REGISTER_DYNAMIC_ITEM,
+                            "Claim a free dynamic item placeholder slot.",
+                            dynamicItemToolParameters()
+                    ),
+                    new VertexAIFunction(
+                            TOOL_REGISTER_DYNAMIC_BLOCK,
+                            "Claim a free dynamic block placeholder slot.",
+                            dynamicBlockToolParameters()
+                    ),
+                    new VertexAIFunction(
+                            TOOL_REGISTER_DYNAMIC_FLUID,
+                            "Claim a free dynamic fluid placeholder slot.",
+                            dynamicFluidToolParameters()
+                    ),
+                    new VertexAIFunction(
+                            TOOL_UPDATE_DYNAMIC_ITEM,
+                            "Update properties for an existing dynamic item slot.",
+                            dynamicItemUpdateToolParameters()
+                    ),
+                    new VertexAIFunction(
+                            TOOL_UPDATE_DYNAMIC_BLOCK,
+                            "Update properties for an existing dynamic block slot.",
+                            dynamicBlockUpdateToolParameters()
+                    ),
+                    new VertexAIFunction(
+                            TOOL_UPDATE_DYNAMIC_FLUID,
+                            "Update properties for an existing dynamic fluid slot.",
+                            dynamicFluidUpdateToolParameters()
+                    ),
+                    new VertexAIFunction(
+                            TOOL_UNREGISTER_DYNAMIC_CONTENT,
+                            "Release a dynamic placeholder entry by type and slot.",
+                            dynamicUnregisterToolParameters()
+                    )
+            ));
+        }
         return List.copyOf(tools);
     }
 
@@ -5207,15 +5480,9 @@ public class MineClawd {
             history.add(0, OpenAIMessage.system(systemPrompt));
             return;
         }
-        
-        // 智能更新系统提示词：只在系统提示词发生实质性变化时更新
-        // 避免每次请求都重复添加相同的系统提示词
-        String currentSystemPrompt = first.content();
-        if (currentSystemPrompt == null || !currentSystemPrompt.equals(systemPrompt)) {
-            // 只有当系统提示词确实发生变化时才更新
-            history.set(0, OpenAIMessage.system(systemPrompt));
-        }
-        // 否则保持现有的系统提示词，避免重复添加
+        // 强制更新系统提示词以确保外部prompt修改能够生效
+        // 不再检查内容是否相同，直接更新
+        history.set(0, OpenAIMessage.system(systemPrompt));
     }
 
     private void ensureVertexHistory(List<VertexAIMessage> history, String systemPrompt) {
@@ -5431,20 +5698,8 @@ public class MineClawd {
             prompt.append("\n\n")
                     .append(ASSET_TRACKING_PROMPT_APPENDIX);
         }
-        
-        // 动态添加工具使用说明（智能上下文管理）
-        // 使用新的揭露式提示词系统，根据会话ID智能管理工具列表
-        String toolInstructions = com.mineclawd.foundation.tool.prompt.RevealedToolPromptSystem.buildSystemPrompt(
-            session != null ? session.id() : null
-        );
-        if (!toolInstructions.isBlank()) {
-            prompt.append("\n\n").append(toolInstructions);
-        }
-        
         return prompt.toString();
     }
-
-
 
     private String buildEnvironmentInfo() {
         String mc = "";
@@ -5570,16 +5825,19 @@ public class MineClawd {
         if (input.isBlank()) {
             return Text.empty();
         }
-        
-        // 使用 Minecraft 自带的文本格式化功能替代 MineDown
-        // 简单的文本格式化：将 Markdown 风格的 **粗体** 和 *斜体* 转换为 Minecraft 格式
-        String formatted = input
-                .replace("**", "§l")  // 粗体
-                .replace("*", "§o")   // 斜体
-                .replace("§l§l", "")  // 清理多余的格式代码
-                .replace("§o§o", ""); // 清理多余的格式代码
-        
-        return Text.literal(formatted);
+        try {
+            Component parsed = MineDown.parse(input);
+            String json = ADVENTURE_GSON.serialize(parsed);
+            Text text = source == null
+                    ? null
+                    : Text.Serialization.fromJson(json, source.getRegistryManager());
+            if (text != null) {
+                return text;
+            }
+        } catch (Exception exception) {
+            LOGGER.debug("MineDown parse fallback: {}", exception.getMessage());
+        }
+        return Text.literal(input);
     }
 
     private String normalizeMineDownActions(String markdown) {
@@ -5661,18 +5919,216 @@ public class MineClawd {
     }
 
     private ToolStatusDescriptor buildToolStatusDescriptor(String toolName, JsonObject args) {
-        ToolStatusDescriptor descriptor = ToolRegistry.getToolStatusDescriptor(toolName, toolName, args);
+        String normalizedName = toolName == null ? "" : toolName.trim();
+        String shortText;
+        String hoverText = "";
+
+        switch (normalizedName) {
+            case TOOL_EXECUTE_COMMAND -> {
+                String command = readOptionalStringArg(args, "command");
+                shortText = "Executing command " + summarizeCommandForStatus(command);
+                hoverText = command.isBlank() ? "" : "Command: " + normalizeCommandForHover(command);
+            }
+            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, LEGACY_TOOL_KUBEJS_EVAL -> {
+                shortText = "Applying instant script";
+                hoverText = "Executing KubeJS instant script (code hidden).";
+            }
+            case TOOL_LIST_COMMANDS -> {
+                String modId = readOptionalStringArg(args, "mod_id");
+                shortText = modId.isBlank() ? "Listing commands" : "Listing commands for " + modId;
+                hoverText = modId.isBlank() ? "Listing server root commands." : "Filter mod_id: " + modId;
+            }
+            case TOOL_FETCH_URL -> {
+                String rawUrl = readOptionalStringArg(args, "url");
+                String host = extractUrlHost(rawUrl);
+                shortText = host.isBlank() ? "Fetching URL" : "Fetching " + host;
+                hoverText = rawUrl.isBlank() ? "Fetching URL content." : "URL: " + rawUrl.trim();
+            }
+            case TOOL_FETCH_MODRINTH -> {
+                String modId = readOptionalStringArg(args, "mod_id");
+                shortText = modId.isBlank() ? "Fetching Modrinth page" : "Fetching Modrinth page for " + modId;
+                hoverText = modId.isBlank() ? "Fetching Modrinth project page." : "Modrinth mod_id: " + modId;
+            }
+            case TOOL_SEARCH -> {
+                String query = readOptionalStringArg(args, "query");
+                shortText = "Searching the web";
+                hoverText = query.isBlank() ? "Web search query unavailable." : "Query: " + query;
+            }
+            case TOOL_LIST_FILES -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Listing files" : "Listing files in " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Listing paths under server root." : "Path: " + path;
+            }
+            case TOOL_READ_FILES -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Reading file" : "Reading " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "" : "Path: " + path;
+            }
+            case TOOL_WRITE_FILES -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Writing file" : "Writing " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Writing a server file." : "Path: " + path;
+            }
+            case TOOL_COPY_FILES -> {
+                shortText = "Copying files";
+                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
+            }
+            case TOOL_MOVE_FILES -> {
+                shortText = "Moving files";
+                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
+            }
+            case TOOL_GREP -> {
+                shortText = "Searching files";
+                hoverText = "Pattern: " + readOptionalStringArg(args, "pattern");
+            }
+            case TOOL_CURL -> {
+                String rawUrl = readOptionalStringArg(args, "url");
+                String host = extractUrlHost(rawUrl);
+                shortText = host.isBlank() ? "Running curl" : "Requesting " + host;
+                hoverText = rawUrl.isBlank() ? "" : "URL: " + rawUrl;
+            }
+            case TOOL_READ_IMAGE -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Reading image" : "Reading image " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "" : "Path: " + path;
+            }
+            case TOOL_RELOAD_GAME -> {
+                shortText = "Reloading game scripts";
+                hoverText = "Running /reload and checking KubeJS loading errors.";
+            }
+            case TOOL_SYNC_COMMAND_TREE -> {
+                shortText = "Syncing command tree";
+                hoverText = "Refreshing command suggestions for online players.";
+            }
+            case TOOL_ASK_USER -> {
+                shortText = "Asking a clarification question";
+                hoverText = readOptionalStringArg(args, "question");
+            }
+            case TOOL_LIST_DYNAMIC_CONTENT -> shortText = "Inspecting dynamic content slots";
+            case TOOL_REGISTER_DYNAMIC_ITEM, TOOL_REGISTER_DYNAMIC_BLOCK, TOOL_REGISTER_DYNAMIC_FLUID ->
+                    shortText = "Registering dynamic content";
+            case TOOL_UPDATE_DYNAMIC_ITEM, TOOL_UPDATE_DYNAMIC_BLOCK, TOOL_UPDATE_DYNAMIC_FLUID ->
+                    shortText = "Updating dynamic content";
+            case TOOL_UNREGISTER_DYNAMIC_CONTENT -> shortText = "Unregistering dynamic content";
+            case TOOL_LIST_ASSETS -> shortText = "Listing tracked assets";
+            case TOOL_UPSERT_ASSET_RECORD -> shortText = "Updating tracked asset";
+            case TOOL_REMOVE_ASSET_RECORD -> shortText = "Removing tracked asset";
+            default -> {
+                shortText = "Running task step";
+                hoverText = normalizedName.isBlank() ? "" : "Tool: " + normalizedName;
+            }
+        }
+
         return new ToolStatusDescriptor(
-                normalizeStatusText(descriptor.shortText(), 220),
-                normalizeStatusText(descriptor.hoverText(), 700)
+                normalizeStatusText(shortText, 220),
+                normalizeStatusText(hoverText, 700)
         );
     }
 
     private ToolStatusDescriptor buildToolStatusCompletedDescriptor(String toolName, JsonObject args) {
-        ToolStatusDescriptor descriptor = ToolRegistry.getToolStatusDescriptor(toolName, toolName, args);
+        String normalizedName = toolName == null ? "" : toolName.trim();
+        String shortText;
+        String hoverText = "";
+
+        switch (normalizedName) {
+            case TOOL_EXECUTE_COMMAND -> {
+                String command = readOptionalStringArg(args, "command");
+                shortText = "Executed command " + summarizeCommandForStatus(command);
+                hoverText = command.isBlank() ? "" : "Command: " + normalizeCommandForHover(command);
+            }
+            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, LEGACY_TOOL_KUBEJS_EVAL -> {
+                shortText = "Applied instant script";
+                hoverText = "Executed KubeJS instant script (code hidden).";
+            }
+            case TOOL_LIST_COMMANDS -> {
+                String modId = readOptionalStringArg(args, "mod_id");
+                shortText = modId.isBlank() ? "Listed commands" : "Listed commands for " + modId;
+                hoverText = modId.isBlank() ? "Listed server root commands." : "Filter mod_id: " + modId;
+            }
+            case TOOL_FETCH_URL -> {
+                String rawUrl = readOptionalStringArg(args, "url");
+                String host = extractUrlHost(rawUrl);
+                shortText = host.isBlank() ? "Fetched URL" : "Fetched " + host;
+                hoverText = rawUrl.isBlank() ? "Fetched URL content." : "URL: " + rawUrl.trim();
+            }
+            case TOOL_FETCH_MODRINTH -> {
+                String modId = readOptionalStringArg(args, "mod_id");
+                shortText = modId.isBlank() ? "Fetched Modrinth page" : "Fetched Modrinth page for " + modId;
+                hoverText = modId.isBlank() ? "Fetched Modrinth project page." : "Modrinth mod_id: " + modId;
+            }
+            case TOOL_SEARCH -> {
+                String query = readOptionalStringArg(args, "query");
+                shortText = "Completed web search";
+                hoverText = query.isBlank() ? "Web search query unavailable." : "Query: " + query;
+            }
+            case TOOL_LIST_FILES -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Listed files" : "Listed files in " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Listed paths under server root." : "Path: " + path;
+            }
+            case TOOL_READ_FILES -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Read file" : "Read " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "" : "Path: " + path;
+            }
+            case TOOL_WRITE_FILES -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Wrote file" : "Wrote " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "Wrote a server file." : "Path: " + path;
+            }
+            case TOOL_COPY_FILES -> {
+                shortText = "Copied files";
+                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
+            }
+            case TOOL_MOVE_FILES -> {
+                shortText = "Moved files";
+                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
+            }
+            case TOOL_GREP -> {
+                shortText = "Searched files";
+                hoverText = "Pattern: " + readOptionalStringArg(args, "pattern");
+            }
+            case TOOL_CURL -> {
+                String rawUrl = readOptionalStringArg(args, "url");
+                String host = extractUrlHost(rawUrl);
+                shortText = host.isBlank() ? "Completed curl" : "Fetched " + host;
+                hoverText = rawUrl.isBlank() ? "" : "URL: " + rawUrl;
+            }
+            case TOOL_READ_IMAGE -> {
+                String path = readOptionalStringArg(args, "path");
+                shortText = path.isBlank() ? "Read image" : "Read image " + summarizePathTail(path);
+                hoverText = path.isBlank() ? "" : "Path: " + path;
+            }
+            case TOOL_RELOAD_GAME -> {
+                shortText = "Reloaded game scripts";
+                hoverText = "Ran /reload and checked KubeJS loading errors.";
+            }
+            case TOOL_SYNC_COMMAND_TREE -> {
+                shortText = "Synced command tree";
+                hoverText = "Refreshed command suggestions for online players.";
+            }
+            case TOOL_ASK_USER -> {
+                shortText = "Asked a clarification question";
+                hoverText = readOptionalStringArg(args, "question");
+            }
+            case TOOL_LIST_DYNAMIC_CONTENT -> shortText = "Inspected dynamic content slots";
+            case TOOL_REGISTER_DYNAMIC_ITEM, TOOL_REGISTER_DYNAMIC_BLOCK, TOOL_REGISTER_DYNAMIC_FLUID ->
+                    shortText = "Registered dynamic content";
+            case TOOL_UPDATE_DYNAMIC_ITEM, TOOL_UPDATE_DYNAMIC_BLOCK, TOOL_UPDATE_DYNAMIC_FLUID ->
+                    shortText = "Updated dynamic content";
+            case TOOL_UNREGISTER_DYNAMIC_CONTENT -> shortText = "Unregistered dynamic content";
+            case TOOL_LIST_ASSETS -> shortText = "Listed tracked assets";
+            case TOOL_UPSERT_ASSET_RECORD -> shortText = "Updated tracked asset";
+            case TOOL_REMOVE_ASSET_RECORD -> shortText = "Removed tracked asset";
+            default -> {
+                shortText = "Completed task step";
+                hoverText = normalizedName.isBlank() ? "" : "Tool: " + normalizedName;
+            }
+        }
+
         return new ToolStatusDescriptor(
-                normalizeStatusText(descriptor.shortText(), 220),
-                normalizeStatusText(descriptor.hoverText(), 700)
+                normalizeStatusText(shortText, 220),
+                normalizeStatusText(hoverText, 700)
         );
     }
 
@@ -5688,53 +6144,51 @@ public class MineClawd {
         return normalized;
     }
 
-    // 旧架构的状态描述辅助方法（已迁移到 MineClawdTool.getToolStatusDescriptor()，不再使用）
-    // private String summarizeCommandForStatus(String command) {
-    //     String normalized = command == null ? "" : command.trim();
-    //     if (normalized.isBlank()) {
-    //         return "command";
-    //     }
-    //     if (!normalized.startsWith("/")) {
-    //         normalized = "/" + normalized;
-    //     }
-    //     int space = normalized.indexOf(' ');
-    //     if (space > 0) {
-    //         return normalized.substring(0, space);
-    //     }
-    //     return normalized;
-    // }
+    private String summarizeCommandForStatus(String command) {
+        String normalized = command == null ? "" : command.trim();
+        if (normalized.isBlank()) {
+            return "command";
+        }
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        int space = normalized.indexOf(' ');
+        if (space > 0) {
+            return normalized.substring(0, space);
+        }
+        return normalized;
+    }
 
-    // private String normalizeCommandForHover(String command) {
-    //     String normalized = command == null ? "" : command.trim();
-    //     if (normalized.isBlank()) {
-    //         return "";
-    //     }
-    //     if (!normalized.startsWith("/")) {
-    //         normalized = "/" + normalized;
-    //     }
-    //     return normalizeStatusText(normalized, 700);
-    // }
+    private String normalizeCommandForHover(String command) {
+        String normalized = command == null ? "" : command.trim();
+        if (normalized.isBlank()) {
+            return "";
+        }
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        return normalizeStatusText(normalized, 700);
+    }
 
-    // 旧架构的 URL 提取方法（已迁移到新工具，不再使用）
-    // private String extractUrlHost(String rawUrl) {
-    //     if (rawUrl == null || rawUrl.isBlank()) {
-    //         return "";
-    //     }
-    //     try {
-    //         URI uri = URI.create(rawUrl.trim());
-    //         String host = uri.getHost();
-    //         if (host == null || host.isBlank()) {
-    //             return "";
-    //         }
-    //         String lower = host.toLowerCase(Locale.ROOT);
-    //         if (lower.startsWith("www.")) {
-    //             lower = lower.substring(4);
-    //         }
-    //         return lower;
-    //     } catch (Exception ignored) {
-    //         return "";
-    //     }
-    // }
+    private String extractUrlHost(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            return "";
+        }
+        try {
+            URI uri = URI.create(rawUrl.trim());
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                return "";
+            }
+            String lower = host.toLowerCase(Locale.ROOT);
+            if (lower.startsWith("www.")) {
+                lower = lower.substring(4);
+            }
+            return lower;
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
 
     private String normalizeStatusText(String text, int maxChars) {
         String normalized = text == null ? "" : text.replace('\r', ' ').replace('\n', ' ').trim();
@@ -5752,17 +6206,6 @@ public class MineClawd {
             return;
         }
         LOGGER.info("[MineClawd Debug] [session:{}] {}", runtime.sessionId(), String.format(format, args));
-    }
-    
-    /**
-     * 调试日志：记录响应长度统计
-     */
-    private void debugResponseLength(AgentRuntime runtime, String responseType, int length, String details) {
-        if (runtime == null || !runtime.debug()) {
-            return;
-        }
-        LOGGER.info("[MineClawd Debug] [session:{}] Response Length - Type: {}, Length: {} chars{}", 
-            runtime.sessionId(), responseType, length, details != null ? ", Details: " + details : "");
     }
 
     private void agentLog(AgentRuntime runtime, String format, Object... args) {
@@ -6534,6 +6977,9 @@ public class MineClawd {
         }
     }
 
+    private record ToolStatusDescriptor(String shortText, String hoverText) {
+    }
+
     private record PreparedPrompt(String text, List<JsonObject> openAiParts, List<JsonObject> vertexParts) {
     }
 
@@ -6737,15 +7183,5 @@ public class MineClawd {
             boolean interactiveErrorActions,
             boolean clientStreamEnabled
     ) {
-    }
-    
-    /**
-     * 注册内置工具到 ToolRegistry
-     * 这些工具会在 MineClawd 初始化时自动注册
-     */
-    private static void registerBuiltInTools() {
-        // TODO: 后续迁移内置工具时在此注册
-        // 由于内置工具较多，暂不在此注册，保持现有逻辑
-        // 将在后续版本中逐步迁移
     }
 }

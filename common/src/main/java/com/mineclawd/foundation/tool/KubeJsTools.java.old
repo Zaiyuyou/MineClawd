@@ -1,0 +1,292 @@
+package com.mineclawd.foundation.tool;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonArray;
+import com.mineclawd.buildin.kubejs.KubeJsToolExecutor;
+import net.minecraft.server.command.ServerCommandSource;
+
+/**
+ * KubeJS工具的新架构包装器
+ * 将KubeJS相关的工具包装成 MineClawdTool 接口
+ */
+public class KubeJsTools {
+    
+    /**
+     * 执行命令工具
+     */
+    public static class ExecuteCommandTool implements MineClawdTool {
+        @Override
+        public String getName() {
+            return "execute-command";
+        }
+        
+        @Override
+        public String getDescription() {
+            return "Execute a Minecraft command. " +
+                   "Use this to perform in-game actions. " +
+                   "Requires: command (string)";
+        }
+        
+        @Override
+        public JsonObject getParameters() {
+            JsonObject params = new JsonObject();
+            params.addProperty("type", "object");
+            
+            JsonObject properties = new JsonObject();
+            
+            JsonObject command = new JsonObject();
+            command.addProperty("type", "string");
+            command.addProperty("description", "The Minecraft command to execute");
+            properties.add("command", command);
+            
+            params.add("properties", properties);
+            
+            JsonArray required = new JsonArray();
+            required.add("command");
+            params.add("required", required);
+            
+            return params;
+        }
+        
+        @Override
+        public ToolExecutionResult execute(ServerCommandSource source, JsonObject args) {
+            String command = args.has("command") ? args.get("command").getAsString() : null;
+            
+            if (command == null || command.isBlank()) {
+                return ToolExecutionResult.failure("command is required");
+            }
+            
+            try {
+                var result = KubeJsToolExecutor.executeCommand(source, command);
+                return new ToolExecutionResult(result.success(), result.output());
+            } catch (Exception e) {
+                return ToolExecutionResult.failure("Failed to execute command: " + e.getMessage());
+            }
+        }
+        
+        @Override
+        public String getPromptAppendix() {
+            return "*** EXECUTE COMMAND TOOL ***\n" +
+                   "Use this tool to execute Minecraft commands. This is the preferred method for simple in-game actions like: changing game rules (gamerule), managing time and weather (time, weather), teleportation (tp), inventory management (give, clear), entity management (kill, summon), world editing (setblock, fill), communication (say), and simple state checks (list, scoreboard).\n" +
+                   "Parameters: command (string, required) - The Minecraft command to execute.\n" +
+                   "Usage guidelines: 1) Prefer this tool for tasks solvable with vanilla commands, 2) Avoid KubeJS overhead when command output is sufficient, 3) Use descriptive commands for better logging and debugging, 4) Test commands in creative mode before applying to survival.\n" +
+                   "Example commands: /gamerule keepInventory true, /time set day, /tp @p 100 64 100, /give @p minecraft:diamond 64, /say Hello world!";
+        }
+        
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+        
+        @Override
+        public ToolStatusDescriptor getToolStatusDescriptor(String toolName, JsonObject args) {
+            String command = args.has("command") ? args.get("command").getAsString() : null;
+            String shortText = command == null || command.isBlank() ? "Executed command" : "Executed command " + command;
+            String hoverText = command == null || command.isBlank() ? "" : "Command: " + command;
+            return new ToolStatusDescriptor(shortText, hoverText);
+        }
+    }
+    
+    /**
+     * 执行即时服务器脚本工具
+     */
+    public static class ApplyInstantServerScriptTool implements MineClawdTool {
+        @Override
+        public String getName() {
+            return "apply-instant-server-script";
+        }
+        
+        @Override
+        public String getDescription() {
+            return "Execute a KubeJS server script immediately. " +
+                   "Use this for one-off operations that require custom logic. " +
+                   "Requires: code (string)";
+        }
+        
+        @Override
+        public JsonObject getParameters() {
+            JsonObject params = new JsonObject();
+            params.addProperty("type", "object");
+            
+            JsonObject properties = new JsonObject();
+            
+            JsonObject code = new JsonObject();
+            code.addProperty("type", "string");
+            code.addProperty("description", "The KubeJS script code to execute");
+            properties.add("code", code);
+            
+            params.add("properties", properties);
+            
+            JsonArray required = new JsonArray();
+            required.add("code");
+            params.add("required", required);
+            
+            return params;
+        }
+        
+        @Override
+        public ToolExecutionResult execute(ServerCommandSource source, JsonObject args) {
+            String code = args.has("code") ? args.get("code").getAsString() : null;
+            
+            if (code == null || code.isBlank()) {
+                return ToolExecutionResult.failure("code is required");
+            }
+            
+            try {
+                var result = KubeJsToolExecutor.executeInstant(source, code);
+                return new ToolExecutionResult(result.success(), result.output());
+            } catch (Exception e) {
+                return ToolExecutionResult.failure("Failed to execute script: " + e.getMessage());
+            }
+        }
+        
+        @Override
+        public String getPromptAppendix() {
+            return "*** APPLY INSTANT SERVER SCRIPT TOOL ***\n" +
+                   "Use this tool to execute KubeJS JavaScript immediately on the running server. Use for one-off operations that require custom server-side logic: inventory inspection and editing, nearby block changes, entity queries and manipulation, any ad-hoc server action, complex calculations and data processing, custom game mechanics implementation.\n" +
+                   "Parameters: code (string, required) - The KubeJS script code to execute.\n" +
+                   "Predefined variables: source (ServerCommandSource), server (MinecraftServer), level (ServerWorld), player (ServerPlayerEntity, may be null), world (ServerWorld, alias for level), entity (Entity, the command source entity).\n" +
+                   "Usage guidelines: 1) Use for complex logic that cannot be achieved with vanilla commands, 2) Always validate inputs and handle errors gracefully, 3) Use descriptive variable names and comments for maintainability, 4) Test scripts in creative mode before applying to survival.\n" +
+                   "Example script: server.getPlayerManager().getPlayerList().forEach(player => { player.giveItemStack(Item.of('minecraft:diamond', 1)); player.sendMessage('You received a diamond!'); }); return 'Distributed diamonds to all players'; Multi-line code can include normal newline characters; they are converted to \\n before execution. No reload required.";
+        }
+        
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+        
+        @Override
+        public ToolStatusDescriptor getToolStatusDescriptor(String toolName, JsonObject args) {
+            return new ToolStatusDescriptor("Applied instant script", "Executed KubeJS instant script (code hidden).");
+        }
+    }
+    
+    /**
+     * 列出服务器脚本工具
+     */
+    public static class ListServerScriptsTool implements MineClawdTool {
+        @Override
+        public String getName() {
+            return "list-server-scripts";
+        }
+        
+        @Override
+        public String getDescription() {
+            return "List available KubeJS server scripts. " +
+                   "Use this to explore existing scripts. " +
+                   "No parameters required.";
+        }
+        
+        @Override
+        public JsonObject getParameters() {
+            JsonObject params = new JsonObject();
+            params.addProperty("type", "object");
+            params.add("properties", new JsonObject());
+            params.add("required", new JsonArray());
+            return params;
+        }
+        
+        @Override
+        public ToolExecutionResult execute(ServerCommandSource source, JsonObject args) {
+            try {
+                var result = KubeJsToolExecutor.listServerScripts(source);
+                return new ToolExecutionResult(result.success(), result.output());
+            } catch (Exception e) {
+                return ToolExecutionResult.failure("Failed to list server scripts: " + e.getMessage());
+            }
+        }
+        
+        @Override
+        public String getPromptAppendix() {
+            return "*** LIST SERVER SCRIPTS TOOL ***\n" +
+                   "Use this tool to list available KubeJS server scripts. Use this to explore existing scripts in the server_scripts directory. No parameters required.";
+        }
+        
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+        
+        @Override
+        public ToolStatusDescriptor getToolStatusDescriptor(String toolName, JsonObject args) {
+            return new ToolStatusDescriptor("Listed server scripts", "Listed available KubeJS server scripts.");
+        }
+    }
+    
+    /**
+     * 询问用户问题工具（异步工具）
+     */
+    public static class AskUserQuestionTool implements MineClawdTool {
+        @Override
+        public String getName() {
+            return "ask-user-question";
+        }
+        
+        @Override
+        public String getDescription() {
+            return "Ask the player a targeted question when details are ambiguous. " +
+                   "Use this before doing anything else. Never guess at risky assumptions. " +
+                   "Requires: question (string), options (array of strings)";
+        }
+        
+        @Override
+        public JsonObject getParameters() {
+            JsonObject params = new JsonObject();
+            params.addProperty("type", "object");
+            
+            JsonObject properties = new JsonObject();
+            
+            JsonObject question = new JsonObject();
+            question.addProperty("type", "string");
+            question.addProperty("description", "The question to ask the player");
+            properties.add("question", question);
+            
+            JsonObject options = new JsonObject();
+            options.addProperty("type", "array");
+            JsonArray items = new JsonArray();
+            items.add("string");
+            options.add("items", items);
+            properties.add("options", options);
+            
+            params.add("properties", properties);
+            
+            JsonArray required = new JsonArray();
+            required.add("question");
+            required.add("options");
+            params.add("required", required);
+            
+            return params;
+        }
+        
+        @Override
+        public ToolExecutionResult execute(ServerCommandSource source, JsonObject args) {
+            return ToolExecutionResult.failure("ask-user-question is an async tool and must be handled specially");
+        }
+        
+        @Override
+        public String getPromptAppendix() {
+            return "*** ASK USER QUESTION TOOL ***\n" +
+                   "Use this tool to ask the player a targeted question when details are ambiguous. This should be your first step before doing anything else. Never guess at risky assumptions.\n" +
+                   "Parameters: question (string, required) - The question to ask, options (array of strings, required) - At least one non-built-in option (do not include Other/Skip).\n" +
+                   "Usage guidelines: 1) Always ask before making risky decisions, 2) Keep questions clear and specific, 3) Provide meaningful options, 4) Respect player choices.";
+        }
+        
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+        
+        @Override
+        public boolean supportsAsync() {
+            return true;
+        }
+        
+        @Override
+        public ToolStatusDescriptor getToolStatusDescriptor(String toolName, JsonObject args) {
+            String question = args.has("question") ? args.get("question").getAsString() : null;
+            String shortText = question == null || question.isBlank() ? "Asked a clarification question" : "Asked: " + question;
+            String hoverText = question == null || question.isBlank() ? "" : "Question: " + question;
+            return new ToolStatusDescriptor(shortText, hoverText);
+        }
+    }
+}

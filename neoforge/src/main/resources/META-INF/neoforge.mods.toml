@@ -26,7 +26,7 @@ side="BOTH"
 
 [[dependencies.mineclawd]]
 modId="kubejsoffline"
-type="required"
+type="optional"
 versionRange="[4.0.0,)"
 ordering="NONE"
 side="BOTH"

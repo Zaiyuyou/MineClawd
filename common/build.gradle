@@ -23,7 +23,7 @@ dependencies {
     // 直接引用本地KubeJSOffline jar文件
     modCompileOnly fileTree(dir: '../libs', include: ['kubejsoffline-*.jar'])
 
-    implementation "de.themoep:minedown-adventure:${rootProject.minedown_version}"
+    // 已移除MineDown依赖，使用Minecraft原生文本格式化功能
 
     implementation "net.kyori:adventure-api:${rootProject.adventure_version}"
     implementation "net.kyori:adventure-key:${rootProject.adventure_version}"
