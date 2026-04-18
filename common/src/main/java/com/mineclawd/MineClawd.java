@@ -1,51 +1,57 @@
 package com.mineclawd;
 
-import de.themoep.minedown.adventure.MineDown;
+// import de.themoep.minedown.adventure.MineDown; // MineDown library not available
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.mineclawd.assets.AssetsManager;
-import com.mineclawd.assets.AssetsManager.AssetCategory;
-import com.mineclawd.assets.AssetsManager.AssetDraft;
-import com.mineclawd.assets.AssetsManager.AssetRecord;
-import com.mineclawd.assets.AssetsManager.UpsertResult;
-import com.mineclawd.assets.AssetsOverlayPayload;
-import com.mineclawd.config.MineClawdConfig;
-import com.mineclawd.dynamic.DynamicContentRegistry;
-import com.mineclawd.dynamic.DynamicContentToolExecutor;
-import com.mineclawd.files.WorkspaceFileToolExecutor;
-import com.mineclawd.kubejs.KubeJsScriptManager;
-import com.mineclawd.kubejs.KubeJsToolExecutor;
-import com.mineclawd.kubejs.KubeJsToolExecutor.ToolExecutionResult;
-import com.mineclawd.llm.OpenAIClient;
-import com.mineclawd.llm.OpenAIMessage;
-import com.mineclawd.llm.OpenAIResponse;
-import com.mineclawd.llm.OpenAITool;
-import com.mineclawd.llm.OpenAIToolCall;
-import com.mineclawd.llm.VertexAIFunction;
-import com.mineclawd.llm.VertexAIClient;
-import com.mineclawd.llm.VertexAIMessage;
-import com.mineclawd.llm.VertexAIResponse;
-import com.mineclawd.llm.VertexAIToolCall;
-import com.mineclawd.mod.ModDocsToolExecutor;
-import com.mineclawd.persona.PersonaManager;
-import com.mineclawd.persona.PersonaManager.Persona;
-import com.mineclawd.agent.AgentManager;
-import com.mineclawd.agent.AgentManager.Agent;
-import com.mineclawd.player.PlayerSettingsManager;
-import com.mineclawd.player.PlayerSettingsManager.RequestBroadcastTarget;
-import com.mineclawd.question.QuestionPromptPayload;
-import com.mineclawd.question.QuestionResponsePayload;
-import com.mineclawd.session.SessionManager;
-import com.mineclawd.session.SessionAttachment;
-import com.mineclawd.session.SessionManager.SessionData;
-import com.mineclawd.session.SessionManager.SessionSummary;
-import com.mineclawd.session.SessionOverlayPayload;
-import com.mineclawd.web.SearchToolExecutor;
-import com.mineclawd.tool_sys.ToolFactory;
-import com.mineclawd.tool_sys.ToolRegistry;
-import com.mineclawd.tool_sys.plugin.MineClawdPluginIntegration;
+import com.mineclawd.foundation.assets.AssetsManager;
+import com.mineclawd.foundation.assets.AssetsManager.AssetCategory;
+import com.mineclawd.foundation.assets.AssetsManager.AssetDraft;
+import com.mineclawd.foundation.assets.AssetsManager.AssetRecord;
+import com.mineclawd.foundation.assets.AssetsManager.UpsertResult;
+import com.mineclawd.foundation.assets.AssetsOverlayPayload;
+import com.mineclawd.foundation.config.MineClawdConfig;
+import com.mineclawd.buildin.dynamic.DynamicContentRegistry;
+import com.mineclawd.buildin.dynamic.DynamicContentToolExecutor;
+import com.mineclawd.buildin.files.WorkspaceFileToolExecutor;
+import com.mineclawd.foundation.kubejs.KubeJsScriptManager;
+import com.mineclawd.buildin.kubejs.KubeJsToolExecutor;
+import com.mineclawd.buildin.kubejs.KubeJsToolExecutor.ToolExecutionResult;
+import com.mineclawd.foundation.llm.OpenAIClient;
+import com.mineclawd.foundation.llm.OpenAIMessage;
+import com.mineclawd.foundation.llm.OpenAIResponse;
+import com.mineclawd.foundation.llm.OpenAITool;
+import com.mineclawd.foundation.llm.OpenAIToolCall;
+import com.mineclawd.foundation.llm.VertexAIFunction;
+import com.mineclawd.foundation.llm.VertexAIClient;
+import com.mineclawd.foundation.llm.VertexAIMessage;
+import com.mineclawd.foundation.llm.VertexAIResponse;
+import com.mineclawd.foundation.llm.VertexAIToolCall;
+
+import java.util.HashSet;
+import java.util.Set;
+import com.mineclawd.buildin.mod.ModDocsToolExecutor;
+import com.mineclawd.foundation.persona.PersonaManager;
+import com.mineclawd.foundation.persona.PersonaManager.Persona;
+import com.mineclawd.foundation.agent.AgentManager;
+import com.mineclawd.foundation.agent.AgentManager.Agent;
+import com.mineclawd.foundation.player.PlayerSettingsManager;
+import com.mineclawd.foundation.player.PlayerSettingsManager.RequestBroadcastTarget;
+import com.mineclawd.foundation.question.QuestionPromptPayload;
+import com.mineclawd.foundation.question.QuestionResponsePayload;
+import com.mineclawd.foundation.session.SessionManager;
+import com.mineclawd.foundation.session.SessionAttachment;
+import com.mineclawd.foundation.session.SessionManager.SessionData;
+import com.mineclawd.foundation.session.SessionManager.SessionSummary;
+import com.mineclawd.foundation.session.SessionOverlayPayload;
+import com.mineclawd.buildin.web.SearchToolExecutor;
+import com.mineclawd.foundation.tool.ToolRegistry;
+import com.mineclawd.foundation.tool.MineClawdTool;
+import com.mineclawd.foundation.tool.ToolExecutorWrapper;
+import com.mineclawd.foundation.tool.ToolStatusDescriptor;
+
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.Suggestions;
@@ -92,13 +98,15 @@ import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.HashMap;
+import java.util.Map;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -133,37 +141,37 @@ public class MineClawd {
     private static final ConcurrentHashMap<UUID, ConcurrentHashMap<String, UploadAssembly>> PENDING_UPLOAD_ASSEMBLIES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Boolean> CLIENT_MOD_READY = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Boolean> CLIENT_GUI_ENABLED = new ConcurrentHashMap<>();
-    private MineClawdPluginIntegration pluginIntegration;
 
-    private static final String TOOL_APPLY_INSTANT_SERVER_SCRIPT = "apply-instant-server-script";
-    private static final String TOOL_ASK_USER = "ask-user-question";
-    private static final String TOOL_EXECUTE_COMMAND = "execute-command";
-    private static final String TOOL_SEARCH = "search";
-    private static final String TOOL_LIST_COMMANDS = "list_commands";
-    private static final String TOOL_FETCH_MODRINTH = "fetch_modrinth";
-    private static final String TOOL_FETCH_URL = "fetch_url";
-    private static final String TOOL_LIST_FILES = "list-files";
-    private static final String TOOL_READ_FILES = "read-files";
-    private static final String TOOL_WRITE_FILES = "write-files";
-    private static final String TOOL_COPY_FILES = "copy-files";
-    private static final String TOOL_MOVE_FILES = "move-files";
-    private static final String TOOL_GREP = "grep";
-    private static final String TOOL_CURL = "curl";
-    private static final String TOOL_READ_IMAGE = "read-image";
-    private static final String TOOL_RELOAD_GAME = "reload-game";
-    private static final String TOOL_SYNC_COMMAND_TREE = "sync-command-tree";
-    private static final String TOOL_LIST_DYNAMIC_CONTENT = "list-dynamic-content";
-    private static final String TOOL_REGISTER_DYNAMIC_ITEM = "register-dynamic-item";
-    private static final String TOOL_REGISTER_DYNAMIC_BLOCK = "register-dynamic-block";
-    private static final String TOOL_REGISTER_DYNAMIC_FLUID = "register-dynamic-fluid";
-    private static final String TOOL_UPDATE_DYNAMIC_ITEM = "update-dynamic-item";
-    private static final String TOOL_UPDATE_DYNAMIC_BLOCK = "update-dynamic-block";
-    private static final String TOOL_UPDATE_DYNAMIC_FLUID = "update-dynamic-fluid";
-    private static final String TOOL_UNREGISTER_DYNAMIC_CONTENT = "unregister-dynamic-content";
-    private static final String TOOL_LIST_ASSETS = "list-assets";
-    private static final String TOOL_UPSERT_ASSET_RECORD = "upsert-asset-record";
-    private static final String TOOL_REMOVE_ASSET_RECORD = "remove-asset-record";
-    private static final String LEGACY_TOOL_KUBEJS_EVAL = "kubejs_eval";
+    // 旧架构的硬编码 tool name 常量（已迁移到 ToolRegistry，不再使用）
+    // private static final String TOOL_APPLY_INSTANT_SERVER_SCRIPT = "apply-instant-server-script";
+    // private static final String TOOL_ASK_USER = "ask-user-question";
+    // private static final String TOOL_EXECUTE_COMMAND = "execute-command";
+    // private static final String TOOL_SEARCH = "search";
+    // private static final String TOOL_LIST_COMMANDS = "list_commands";
+    // private static final String TOOL_FETCH_MODRINTH = "fetch_modrinth";
+    // private static final String TOOL_FETCH_URL = "fetch_url";
+    // private static final String TOOL_LIST_FILES = "list-files";
+    // private static final String TOOL_READ_FILES = "read-files";
+    // private static final String TOOL_WRITE_FILES = "write-files";
+    // private static final String TOOL_COPY_FILES = "copy-files";
+    // private static final String TOOL_MOVE_FILES = "move-files";
+    // private static final String TOOL_GREP = "grep";
+    // private static final String TOOL_CURL = "curl";
+    // private static final String TOOL_READ_IMAGE = "read-image";
+    // private static final String TOOL_RELOAD_GAME = "reload-game";
+    // private static final String TOOL_SYNC_COMMAND_TREE = "sync-command-tree";
+    // private static final String TOOL_LIST_DYNAMIC_CONTENT = "list-dynamic-content";
+    // private static final String TOOL_REGISTER_DYNAMIC_ITEM = "register-dynamic-item";
+    // private static final String TOOL_REGISTER_DYNAMIC_BLOCK = "register-dynamic-block";
+    // private static final String TOOL_REGISTER_DYNAMIC_FLUID = "register-dynamic-fluid";
+    // private static final String TOOL_UPDATE_DYNAMIC_ITEM = "update-dynamic-item";
+    // private static final String TOOL_UPDATE_DYNAMIC_BLOCK = "update-dynamic-block";
+    // private static final String TOOL_UPDATE_DYNAMIC_FLUID = "update-dynamic-fluid";
+    // private static final String TOOL_UNREGISTER_DYNAMIC_CONTENT = "unregister-dynamic-content";
+    // private static final String TOOL_LIST_ASSETS = "list-assets";
+    // private static final String TOOL_UPSERT_ASSET_RECORD = "upsert-asset-record";
+    // private static final String TOOL_REMOVE_ASSET_RECORD = "remove-asset-record";
+    // private static final String LEGACY_TOOL_KUBEJS_EVAL = "kubejs_eval";
     private static final int TOOL_LIMIT_MIN = 1;
     private static final int TOOL_LIMIT_MAX = 20;
     private static final int MAX_REPEAT_TOOL_CALLS = 1;
@@ -275,56 +283,20 @@ public class MineClawd {
         "",
 
         // ── 3. TOOLS ─────────────────────────────────────────────────────────────
-        "*** TOOL REFERENCE ***",
+        "*** TOOL ACCESS ***",
         "",
-        "— INFORMATION & RESEARCH —",
-        "  `ask-user-question`  Ask the player a targeted question when details are ambiguous.",
-        "    Provide a concise `question` and up to 5 preset `options`.",
-        "    Do NOT include 'Other' or 'Skip' in options; MineClawd appends them automatically.",
-        "  `list_commands`      List available root commands, optionally filtered by `mod_id`.",
-        "    Filtered matching is best-effort based on command names and prefixes.",
-        "  `fetch_modrinth`     Fetch the Modrinth project page for an installed mod id. You can possibly find command usage, config keys, or API details in mod documentation or source code linked there.",
-        "  `fetch_url`          Fetch any HTTP(S) page; HTML is returned as Markdown.",
-        "    Use for command usage, config keys, API details, or mod documentation.",
-        "  `search`             Web search via Tavily (available only when configured).",
-        "    Use when external references are needed beyond installed-mod docs.",
-        "  `list-files`         List files/directories (optional path + recursion).",
-        "  `read-files`         Read text files.",
-        "  `grep`               Regex search inside files.",
-        "  `read-image`         Read/describe an image file with the configured vision model.",
+        "You have access to a comprehensive set of tools for Minecraft automation and scripting.",
+        "Tools are organized by category and will be provided when you need them.",
         "",
-        "— KUBEJS OFFLINE DOCUMENTATION INTEGRATION —",
-        "  *** STRICT REQUIREMENT: Before generating ANY KubeJS-related content, you MUST:",
-        "  1. Check if KubeJS Offline Documentation mod is installed using `list-files` in `mods/`",
-        "  2. Verify documentation exists in `kubejs/documentation/` directory",
-        "  3. If documentation is missing, immediately guide player to run: `/kubejs offline_docs generate`",
-        "  4. Wait for generation to complete before proceeding",
-        "  5. ALL KubeJS methods and classes used MUST be found in the generated documentation",
-        "  6. Do NOT proceed with KubeJS content generation until documentation is verified available",
+        "Key tool categories include:",
+        "- File operations (list, read, write, search files)",
+        "- Command execution and game management",
+        "- KubeJS scripting and server operations",
+        "- Web search and documentation lookup",
+        "- Dynamic content management",
         "",
-        "— ACTION & EXECUTION —",
-        "  `execute-command`    Run a vanilla Minecraft command and return its output.",
-        "    Prefer this for: gamerule, time, weather, tp, effect, give, clear, kill,",
-        "    summon, setblock, fill, say, and simple state checks.",
-        "    If command output is sufficient, skip KubeJS entirely.",
-        "  `apply-instant-server-script`",
-        "    Execute KubeJS JavaScript immediately on the running server via /_exec_kubejs_internal.",
-        "    Use for one-off operations: inventory inspection/editing, nearby block changes,",
-        "    entity queries, or any ad-hoc server action.",
-        "    Multi-line code may include normal newline characters; they are converted to \\n before",
-        "    execution. No reload required.",
-        "    Predefined variables: source, server, level, player (any may be null).",
-        "    If server is null, use Utils.getServer().",
-        "  `write-files`          Write text files. Especially KubeJS server scripts.",
-        "  `copy-files`           Copy files/directories.",
-        "  `move-files`           Move/rename files/directories.",
-        "  `curl`                 Perform HTTP requests and return response details. Use this for downloading files. If you just need to fetch text content, prefer `fetch_url` which is more llm-friendly.",
-        "  `reload-game`          Run /reload, return KubeJS loading errors.",
-        "  `sync-command-tree`    Push refreshed command suggestions to online players.",
-        "    Call ONLY when command registrations changed AND reload already succeeded.",
-        "",
-        "  All file paths are server-root-relative (the folder containing world/, logs/, mods/,",
-        "  config/, etc.). Parent traversal (..) is blocked.",
+        "When you need to use a tool, request it and the full specification will be provided.",
+        "Always verify tool parameters and results carefully.",
 
         // ── 4. PERSISTENT-SCRIPT WORKFLOW ────────────────────────────────────────
         "*** PERSISTENT-SCRIPT WORKFLOW ***",
@@ -481,27 +453,19 @@ public class MineClawd {
         }
         INSTANCE = new MineClawd();
         MineClawd instance = INSTANCE;
+        
+
+        
         MineClawdConfig.HANDLER.load();
         MineClawdConfig.HANDLER.save();
         DynamicContentRegistry.bootstrap(MineClawdConfig.get());
-        
-        // 初始化插件化工具系统
-        // 延迟到SERVER_STARTED事件中初始化，此时server可用
-        LifecycleEvent.SERVER_STARTED.register(server -> {
-            instance.pluginIntegration = new MineClawdPluginIntegration("mineclawd");
-            instance.pluginIntegration.initialize();
-            // 将插件工具提供者注册到ToolRegistry
-            com.mineclawd.tool_sys.ToolRegistry.loadFromPlugins(instance.pluginIntegration.getToolProvider());
-            // 检查工具定义验证结果
-            com.mineclawd.tool_sys.ToolRegistry.checkToolValidation();
-            DynamicContentRegistry.loadPersistentState(server);
-        });
-        LifecycleEvent.SERVER_STOPPED.register(server -> {
-            DynamicContentRegistry.clearServerStateCache();
-        });
+        LifecycleEvent.SERVER_STARTED.register(DynamicContentRegistry::loadPersistentState);
+        LifecycleEvent.SERVER_STOPPED.register(server -> DynamicContentRegistry.clearServerStateCache());
 
         KubeJsScriptManager.ensureScriptInGameDir();
         MineClawdNetworking.register();
+        
+        
         PlayerEvent.PLAYER_JOIN.register(player -> {
             MinecraftServer server = player.getServer();
             if (server == null) {
@@ -514,9 +478,6 @@ public class MineClawd {
                     instance.sendBroadcastTargetSync(player);
                     instance.sendAssistiveTouchSync(player);
                     DynamicContentRegistry.syncToPlayer(player);
-                    
-                    // 发送工具验证警告消息
-                    com.mineclawd.tool_sys.ToolRegistry.sendToolValidationWarning(player);
                 });
         });
         PlayerEvent.PLAYER_QUIT.register(player -> {
@@ -658,6 +619,13 @@ public class MineClawd {
             return EventResult.interruptFalse();
         });
         CommandRegistrationEvent.EVENT.register(instance::registerCommands);
+        
+        // 监听reload事件，自动重载工具
+        LifecycleEvent.SERVER_STARTED.register(server -> {
+            LOGGER.info("Server started, reloading tools for new session");
+            com.mineclawd.foundation.tool.ToolRegistry.reloadBuiltInTools();
+        });
+        
         LOGGER.info("MineClawd initialized. /mineclawd is ready for the agent loop.");
     }
 
@@ -714,6 +682,39 @@ public class MineClawd {
                                             String sessionRef = StringArgumentType.getString(context, "session");
                                             return removeSession(context.getSource(), sessionRef);
                                         }))))
+                        .then(CommandManager.literal("history")
+                                .executes(context -> showCurrentSessionHistory(context.getSource()))
+                                .then(CommandManager.argument("session", StringArgumentType.word())
+                                        .suggests((context, builder) -> suggestSessionReference(context.getSource(), builder))
+                                        .executes(context -> {
+                                            String sessionRef = StringArgumentType.getString(context, "session");
+                                            return showSessionHistory(context.getSource(), sessionRef);
+                                        })))
+                        .then(CommandManager.literal("export-history")
+                                .executes(context -> exportSessionHistory(context.getSource()))
+                                .then(CommandManager.argument("session", StringArgumentType.word())
+                                        .suggests((context, builder) -> suggestSessionReference(context.getSource(), builder))
+                                        .executes(context -> {
+                                            String sessionRef = StringArgumentType.getString(context, "session");
+                                            return exportSessionHistory(context.getSource(), sessionRef);
+                                        })))
+                        // 暂时注释掉memory相关命令，等待架构稳定后再启用
+                        // .then(CommandManager.literal("memory")
+                        //         .executes(context -> showCurrentSessionMemory(context.getSource()))
+                        //         .then(CommandManager.argument("session", StringArgumentType.word())
+                        //                 .suggests((context, builder) -> suggestSessionReference(context.getSource(), builder))
+                        //                 .executes(context -> {
+                        //                     String sessionRef = StringArgumentType.getString(context, "session");
+                        //                     return showSessionMemory(context.getSource(), sessionRef);
+                        //                 })))
+                        // .then(CommandManager.literal("export-memory")
+                        //         .executes(context -> exportSessionMemory(context.getSource()))
+                        //         .then(CommandManager.argument("session", StringArgumentType.word())
+                        //                 .suggests((context, builder) -> suggestSessionReference(context.getSource(), builder))
+                        //                 .executes(context -> {
+                        //                     String sessionRef = StringArgumentType.getString(context, "session");
+                        //                     return exportSessionMemory(context.getSource(), sessionRef);
+                        //                 })))
                 .then(CommandManager.literal("assets")
                         .executes(context -> listAssets(context.getSource()))
                         .then(CommandManager.literal("list")
@@ -739,8 +740,6 @@ public class MineClawd {
                                             String assetRef = StringArgumentType.getString(context, "asset");
                                             return removeAssetRecord(context.getSource(), assetRef);
                                         }))))
-                .then(CommandManager.literal("history")
-                        .executes(context -> showCurrentSessionHistory(context.getSource())))
                 .then(CommandManager.literal("new")
                         .executes(context -> createNewSession(context.getSource())))
                 .then(CommandManager.literal("stop")
@@ -789,23 +788,28 @@ public class MineClawd {
                                     String request = StringArgumentType.getString(context, "request");
                                     return handleRequest(context.getSource(), request);
                                 })))
-                .then(CommandManager.literal("tool")
-                        .then(CommandManager.literal("list")
-                                .executes(context -> listTools(context.getSource())))
+                .then(CommandManager.literal("tools")
+                        .executes(context -> listTools(context.getSource()))
                         .then(CommandManager.literal("enable")
                                 .then(CommandManager.argument("tool", StringArgumentType.word())
-                                        .suggests((context, builder) -> suggestToolName(context.getSource(), builder, false))
+                                        .suggests((context, builder) -> suggestToolName(context.getSource(), builder))
                                         .executes(context -> {
                                             String toolName = StringArgumentType.getString(context, "tool");
                                             return enableTool(context.getSource(), toolName);
-                                        })))
+                                        })
+                                )
+                        )
                         .then(CommandManager.literal("disable")
                                 .then(CommandManager.argument("tool", StringArgumentType.word())
-                                        .suggests((context, builder) -> suggestToolName(context.getSource(), builder, true))
+                                        .suggests((context, builder) -> suggestToolName(context.getSource(), builder))
                                         .executes(context -> {
                                             String toolName = StringArgumentType.getString(context, "tool");
                                             return disableTool(context.getSource(), toolName);
-                                        })))));
+                                        })
+                                )
+                        )
+                        .then(CommandManager.literal("reload")
+                                .executes(context -> reloadTools(context.getSource())))));
 
         dispatcher.register(CommandManager.literal("mclawd")
                 .requires(this::isOp)
@@ -1329,74 +1333,6 @@ public class MineClawd {
         return 1;
     }
 
-    private int listTools(ServerCommandSource source) {
-        if (!isOp(source)) {
-            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
-            return 0;
-        }
-        
-        List<com.mineclawd.tool_sys.ToolDefinition> allTools = ToolRegistry.getAll();
-        
-        if (allTools.isEmpty()) {
-            sendAgentMessage(source, "No tools registered.");
-            return 1;
-        }
-        
-        int enabledCount = 0;
-        int disabledCount = 0;
-        
-        sendAgentMessage(source, "Tools (`" + allTools.size() + "` total):");
-        
-        for (com.mineclawd.tool_sys.ToolDefinition tool : allTools) {
-            String status = "✅ enabled";
-            String sourceInfo = "MineClawd (built-in)";
-            
-            sendAgentMessage(source, "  `" + tool.name() + "` - " + status + " (" + sourceInfo + ")");
-            
-            enabledCount++;
-        }
-        
-        sendAgentMessage(source, "Summary: " + enabledCount + " enabled, " + disabledCount + " disabled");
-        sendAgentMessage(source, "Usage: `/mineclawd tool enable <toolname>` or `/mineclawd tool disable <toolname>`");
-        return 1;
-    }
-    
-    private int enableTool(ServerCommandSource source, String toolName) {
-        if (!isOp(source)) {
-            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
-            return 0;
-        }
-        
-        sendAgentMessage(source, "❌ Tool `" + toolName + "` not found (plugin system simplified)");
-        return 1;
-    }
-    
-    private int disableTool(ServerCommandSource source, String toolName) {
-        if (!isOp(source)) {
-            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
-            return 0;
-        }
-        
-        sendAgentMessage(source, "❌ Tool `" + toolName + "` not found (plugin system simplified)");
-        return 1;
-    }
-    
-    private CompletableFuture<Suggestions> suggestToolName(ServerCommandSource source, SuggestionsBuilder builder, boolean disabledOnly) {
-        if (source == null || !isOp(source)) {
-            return Suggestions.empty();
-        }
-        
-        List<String> toolNames = new ArrayList<>();
-        for (com.mineclawd.tool_sys.ToolDefinition tool : ToolRegistry.getAll()) {
-            if (disabledOnly) {
-                continue;
-            }
-            toolNames.add(tool.name());
-        }
-        
-        return CommandSource.suggestMatching(toolNames, builder);
-    }
-
     private void sendAssetsOverlayToPlayer(ServerCommandSource source, ServerPlayerEntity player, boolean openUi) {
         if (source == null || player == null) {
             return;
@@ -1689,46 +1625,6 @@ public class MineClawd {
         return 1;
     }
 
-    /**
-     * 将JsonObject转换为Map
-     */
-    private Map<String, Object> convertJsonToMap(JsonObject json) {
-        Map<String, Object> map = new HashMap<>();
-        if (json != null) {
-            for (Map.Entry<String, JsonElement> entry : json.entrySet()) {
-                JsonElement element = entry.getValue();
-                if (element.isJsonPrimitive()) {
-                    if (element.getAsJsonPrimitive().isString()) {
-                        map.put(entry.getKey(), element.getAsString());
-                    } else if (element.getAsJsonPrimitive().isNumber()) {
-                        map.put(entry.getKey(), element.getAsNumber());
-                    } else if (element.getAsJsonPrimitive().isBoolean()) {
-                        map.put(entry.getKey(), element.getAsBoolean());
-                    }
-                } else if (element.isJsonObject()) {
-                    map.put(entry.getKey(), convertJsonToMap(element.getAsJsonObject()));
-                } else if (element.isJsonArray()) {
-                    List<Object> list = new ArrayList<>();
-                    for (JsonElement arrayElement : element.getAsJsonArray()) {
-                        if (arrayElement.isJsonPrimitive()) {
-                            if (arrayElement.getAsJsonPrimitive().isString()) {
-                                list.add(arrayElement.getAsString());
-                            } else if (arrayElement.getAsJsonPrimitive().isNumber()) {
-                                list.add(arrayElement.getAsNumber());
-                            } else if (arrayElement.getAsJsonPrimitive().isBoolean()) {
-                                list.add(arrayElement.getAsBoolean());
-                            }
-                        } else if (arrayElement.isJsonObject()) {
-                            list.add(convertJsonToMap(arrayElement.getAsJsonObject()));
-                        }
-                    }
-                    map.put(entry.getKey(), list);
-                }
-            }
-        }
-        return map;
-    }
-
     private ToolExecutionResult runGiveItemCommand(
             ServerCommandSource source,
             ServerPlayerEntity player,
@@ -1939,6 +1835,78 @@ public class MineClawd {
         return CommandSource.suggestMatching(candidates, builder);
     }
 
+    private CompletableFuture<Suggestions> suggestToolName(ServerCommandSource source, SuggestionsBuilder builder) {
+        if (source == null || !isOp(source)) {
+            return Suggestions.empty();
+        }
+        List<String> toolNames = new ArrayList<>(com.mineclawd.foundation.tool.ToolRegistry.getAll().keySet());
+        return CommandSource.suggestMatching(toolNames, builder);
+    }
+
+    private int listTools(ServerCommandSource source) {
+        if (!isOp(source)) {
+            return 0;
+        }
+        
+        Map<String, com.mineclawd.foundation.tool.MineClawdTool> tools = com.mineclawd.foundation.tool.ToolRegistry.getAll();
+        
+        sendAgentMessage(source, "=== 可用工具列表 ===");
+        for (Map.Entry<String, com.mineclawd.foundation.tool.MineClawdTool> entry : tools.entrySet()) {
+            String toolName = entry.getKey();
+            com.mineclawd.foundation.tool.MineClawdTool tool = entry.getValue();
+            boolean enabled = com.mineclawd.foundation.tool.ToolRegistry.isEnabled(toolName);
+            String status = enabled ? "§a启用" : "§c禁用";
+            String category = tool.getPromptCategory() != null ? tool.getPromptCategory() : "General";
+            
+            sendAgentMessage(source, String.format("- %s [%s] (%s): %s", 
+                toolName, status, category, tool.getDescription()));
+        }
+        sendAgentMessage(source, "使用 /mineclawd tools enable <工具名> 或 /mineclawd tools disable <工具名> 管理工具状态");
+        
+        return 1;
+    }
+
+    private int enableTool(ServerCommandSource source, String toolName) {
+        if (!isOp(source)) {
+            return 0;
+        }
+        
+        boolean success = com.mineclawd.foundation.tool.ToolRegistry.enable(toolName);
+        if (success) {
+            sendAgentMessage(source, "§a工具已启用: " + toolName);
+        } else {
+            sendAgentMessage(source, "§c启用工具失败: " + toolName + " (工具不存在)");
+        }
+        
+        return success ? 1 : 0;
+    }
+
+    private int disableTool(ServerCommandSource source, String toolName) {
+        if (!isOp(source)) {
+            return 0;
+        }
+        
+        boolean success = com.mineclawd.foundation.tool.ToolRegistry.disable(toolName);
+        if (success) {
+            sendAgentMessage(source, "§c工具已禁用: " + toolName);
+        } else {
+            sendAgentMessage(source, "§c禁用工具失败: " + toolName + " (工具不存在)");
+        }
+        
+        return success ? 1 : 0;
+    }
+
+    private int reloadTools(ServerCommandSource source) {
+        if (!isOp(source)) {
+            return 0;
+        }
+        
+        com.mineclawd.foundation.tool.ToolRegistry.reloadBuiltInTools();
+        sendAgentMessage(source, "§a工具已重新加载");
+        
+        return 1;
+    }
+
     private int resumeSession(ServerCommandSource source, String sessionRef) {
         if (!isOp(source)) {
             source.sendError(Text.literal("MineClawd: only OP users can run this command."));
@@ -2057,6 +2025,298 @@ public class MineClawd {
         List<HistoryEntry> entries = collectVisibleHistoryEntries(session);
         sendHistoryBookToPlayer(source, player, session, entries);
         return 1;
+    }
+
+    private int showSessionHistory(ServerCommandSource source, String sessionRef) {
+        if (!isOp(source)) {
+            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+            return 0;
+        }
+        if (!(source.getEntity() instanceof ServerPlayerEntity player)) {
+            source.sendError(Text.literal("MineClawd: this command must be executed by a player."));
+            return 0;
+        }
+        
+        String ownerKey = sessionOwnerKey(source);
+        SessionData session = SESSION_MANAGER.resolve(ownerKey, sessionRef);
+        if (session == null) {
+            source.sendError(Text.literal("MineClawd: session not found. Use /mineclawd sessions list."));
+            return 0;
+        }
+
+        List<HistoryEntry> entries = collectVisibleHistoryEntries(session);
+        sendHistoryBookToPlayer(source, player, session, entries);
+        return 1;
+    }
+
+    private int exportSessionHistory(ServerCommandSource source) {
+        if (!isOp(source)) {
+            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+            return 0;
+        }
+        
+        SessionData session = SESSION_MANAGER.loadActiveSession(sessionOwnerKey(source));
+        if (session == null) {
+            sendAgentMessage(source, "No active session. Use `/mineclawd sessions new` first.");
+            return 1;
+        }
+        
+        try {
+            // 生成时间戳
+            String timestamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            // 生成简化的session id（取前8位）
+            String shortSessionId = session.id().length() > 8 ? session.id().substring(0, 8) : session.id();
+            
+            // 导出OpenAI历史记录
+            String openaiFilename = String.format("openai_%s_%s.json", shortSessionId, timestamp);
+            exportHistoryToFile(session.openAiHistory(), openaiFilename);
+            
+            // 导出VertexAI历史记录
+            String vertexFilename = String.format("vertex_%s_%s.json", shortSessionId, timestamp);
+            exportHistoryToFile(convertVertexToOpenAI(session.vertexHistory()), vertexFilename);
+            
+            sendAgentMessage(source, String.format("Session history exported to files: %s, %s", openaiFilename, vertexFilename));
+            return 1;
+        } catch (Exception e) {
+            sendAgentMessage(source, "Failed to export session history: " + e.getMessage());
+            return 0;
+        }
+    }
+
+    private int exportSessionHistory(ServerCommandSource source, String sessionRef) {
+        if (!isOp(source)) {
+            source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+            return 0;
+        }
+        
+        String ownerKey = sessionOwnerKey(source);
+        SessionData session = SESSION_MANAGER.resolve(ownerKey, sessionRef);
+        if (session == null) {
+            source.sendError(Text.literal("MineClawd: session not found. Use /mineclawd sessions list."));
+            return 0;
+        }
+        
+        try {
+            // 生成时间戳
+            String timestamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            // 生成简化的session id（取前8位）
+            String shortSessionId = session.id().length() > 8 ? session.id().substring(0, 8) : session.id();
+            
+            // 导出OpenAI历史记录
+            String openaiFilename = String.format("openai_%s_%s.json", shortSessionId, timestamp);
+            exportHistoryToFile(session.openAiHistory(), openaiFilename);
+            
+            // 导出VertexAI历史记录
+            String vertexFilename = String.format("vertex_%s_%s.json", shortSessionId, timestamp);
+            exportHistoryToFile(convertVertexToOpenAI(session.vertexHistory()), vertexFilename);
+            
+            sendAgentMessage(source, String.format("Session history exported to files: %s, %s", openaiFilename, vertexFilename));
+            return 1;
+        } catch (Exception e) {
+            sendAgentMessage(source, "Failed to export session history: " + e.getMessage());
+            return 0;
+        }
+    }
+    
+    // private int showCurrentSessionMemory(ServerCommandSource source) {
+    //     if (!isOp(source)) {
+    //         source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+    //         return 0;
+    //     }
+    //     if (!(source.getEntity() instanceof ServerPlayerEntity player)) {
+    //         source.sendError(Text.literal("MineClawd: this command must be executed by a player."));
+    //         return 0;
+    //     }
+    //     SessionData session = SESSION_MANAGER.loadActiveSession(sessionOwnerKey(source));
+    //     if (session == null) {
+    //         sendAgentMessage(source, "No active session. Use `/mineclawd sessions new` first.");
+    //         return 1;
+    //     }
+    //     
+    //     // 调用记忆调试功能
+    //     if (session.conversationMemory() != null) {
+    //         MineClawdConfig config = MineClawdConfig.get();
+    //         session.conversationMemory().debugMemory(config.debugMode, session.id());
+    //         sendAgentMessage(source, "记忆调试信息已输出到控制台。");
+    //     } else {
+    //         sendAgentMessage(source, "当前会话没有记忆系统。");
+    //     }
+    //     
+    //     return 1;
+    // }
+    
+    // private int exportSessionMemory(ServerCommandSource source) {
+    //     if (!isOp(source)) {
+    //         source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+    //         return 0;
+    //     }
+    //     
+    //     SessionData session = SESSION_MANAGER.loadActiveSession(sessionOwnerKey(source));
+    //     if (session == null) {
+    //         sendAgentMessage(source, "No active session. Use `/mineclawd sessions new` first.");
+    //         return 1;
+    //     }
+    //     
+    //     if (session.conversationMemory() == null) {
+    //         sendAgentMessage(source, "当前会话没有记忆系统。");
+    //         return 1;
+    //     }
+    //     
+    //     try {
+    //         // 生成时间戳
+    //         String timestamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+    //         // 生成简化的session id（取前8位）
+    //         String shortSessionId = session.id().length() > 8 ? session.id().substring(0, 8) : session.id();
+    //         
+    //         // 导出记忆数据
+    //         String memoryFilename = String.format("memory_%s_%s.json", shortSessionId, timestamp);
+    //         
+    //         // 构建导出路径
+    //         Path exportDir = Platform.getGameFolder().resolve("mineclawd").resolve("exports");
+    //         Files.createDirectories(exportDir);
+    //         Path exportFile = exportDir.resolve(memoryFilename);
+    //         
+    //         // 获取记忆JSON数据
+    //         String memoryJson = session.conversationMemory().exportMemoryAsJson();
+    //         
+    //         // 写入文件
+    //         Files.writeString(exportFile, memoryJson, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    //         
+    //         sendAgentMessage(source, String.format("Session memory exported to file: %s", memoryFilename));
+    //         return 1;
+    //     } catch (Exception e) {
+    //         sendAgentMessage(source, "Failed to export session memory: " + e.getMessage());
+    //         return 0;
+    //     }
+    // }
+
+    // private int showSessionMemory(ServerCommandSource source, String sessionRef) {
+    //     if (!isOp(source)) {
+    //         source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+    //         return 0;
+    //     }
+    //     
+    //     String ownerKey = sessionOwnerKey(source);
+    //     SessionData session = SESSION_MANAGER.resolve(ownerKey, sessionRef);
+    //     if (session == null) {
+    //         source.sendError(Text.literal("MineClawd: session not found. Use /mineclawd sessions list."));
+    //         return 0;
+    //     }
+    //     
+    //     // 调用记忆调试功能
+    //     if (session.conversationMemory() != null) {
+    //         MineClawdConfig config = MineClawdConfig.get();
+    //         session.conversationMemory().debugMemory(config.debugMode, session.id());
+    //         sendAgentMessage(source, "记忆调试信息已输出到控制台。");
+    //     } else {
+    //         sendAgentMessage(source, "该会话没有记忆系统。");
+    //     }
+    //     
+    //     return 1;
+    // }
+
+    // private int exportSessionMemory(ServerCommandSource source, String sessionRef) {
+    //     if (!isOp(source)) {
+    //         source.sendError(Text.literal("MineClawd: only OP users can run this command."));
+    //         return 0;
+    //     }
+    //     
+    //     String ownerKey = sessionOwnerKey(source);
+    //     SessionData session = SESSION_MANAGER.resolve(ownerKey, sessionRef);
+    //     if (session == null) {
+    //         source.sendError(Text.literal("MineClawd: session not found. Use /mineclawd sessions list."));
+    //         return 0;
+    //     }
+    //     
+    //     if (session.conversationMemory() == null) {
+    //         sendAgentMessage(source, "该会话没有记忆系统。");
+    //         return 1;
+    //     }
+    //     
+    //     try {
+    //         // 生成时间戳
+    //         String timestamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+    //         // 生成简化的session id（取前8位）
+    //         String shortSessionId = session.id().length() > 8 ? session.id().substring(0, 8) : session.id();
+    //         
+    //         // 导出记忆数据
+    //         String memoryFilename = String.format("memory_%s_%s.json", shortSessionId, timestamp);
+    //         
+    //         // 构建导出路径
+    //         Path exportDir = Platform.getGameFolder().resolve("mineclawd").resolve("exports");
+    //         Files.createDirectories(exportDir);
+    //         Path exportFile = exportDir.resolve(memoryFilename);
+    //         
+    //         // 获取记忆JSON数据
+    //         String memoryJson = session.conversationMemory().exportMemoryAsJson();
+    //         
+    //         // 写入文件
+    //         Files.writeString(exportFile, memoryJson, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    //         
+    //         sendAgentMessage(source, String.format("Session memory exported to file: %s", memoryFilename));
+    //         return 1;
+    //     } catch (Exception e) {
+    //         sendAgentMessage(source, "Failed to export session memory: " + e.getMessage());
+    //         return 0;
+    //     }
+    // }
+
+    private void exportHistoryToFile(List<OpenAIMessage> history, String filename) throws Exception {
+        if (history == null || history.isEmpty()) {
+            return;
+        }
+        
+        // 构建导出路径
+        Path exportDir = Platform.getGameFolder().resolve("mineclawd").resolve("exports");
+        Files.createDirectories(exportDir);
+        Path exportFile = exportDir.resolve(filename);
+        
+        // 转换为JSON格式
+        List<Map<String, Object>> exportData = new ArrayList<>();
+        for (int i = 0; i < history.size(); i++) {
+            OpenAIMessage message = history.get(i);
+            Map<String, Object> messageData = new HashMap<>();
+            messageData.put("index", i);
+            messageData.put("role", message.role());
+            messageData.put("content", message.content());
+            if (message.toolCalls() != null && !message.toolCalls().isEmpty()) {
+                messageData.put("tool_calls", message.toolCalls().size());
+            }
+            exportData.add(messageData);
+        }
+        
+        // 写入文件
+        String json = new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(exportData);
+        Files.writeString(exportFile, json, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private List<OpenAIMessage> convertVertexToOpenAI(List<VertexAIMessage> vertexHistory) {
+        if (vertexHistory == null || vertexHistory.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        List<OpenAIMessage> openAiHistory = new ArrayList<>();
+        for (VertexAIMessage vertexMessage : vertexHistory) {
+            // 直接转换数据结构，不简化内容
+            String content = convertVertexPartsToText(vertexMessage.parts());
+            openAiHistory.add(OpenAIMessage.user(content));
+        }
+        return openAiHistory;
+    }
+    
+    private String convertVertexPartsToText(List<com.google.gson.JsonObject> parts) {
+        if (parts == null || parts.isEmpty()) {
+            return "";
+        }
+        
+        StringBuilder content = new StringBuilder();
+        for (com.google.gson.JsonObject part : parts) {
+            if (part != null) {
+                // 直接转换为JSON字符串，保持原始格式
+                content.append(part.toString()).append("\n");
+            }
+        }
+        return content.toString().trim();
     }
 
     private int retryFailedRequest(ServerCommandSource source, String token) {
@@ -2506,6 +2766,11 @@ public class MineClawd {
         }
         try {
             String systemPrompt = buildSystemPrompt(source, config, ownerKey, runtime.dynamicRegistryEnabled(), session);
+            
+            // 调试：记录系统提示词长度
+            debugResponseLength(runtime, "System Prompt", systemPrompt.length(), 
+                "Session: " + (session != null ? session.id() : "new"));
+            
             if (provider == MineClawdConfig.LlmProvider.OPENAI) {
                 List<OpenAIMessage> history;
                 if (runtime.sessionBacked() && session != null) {
@@ -2513,8 +2778,17 @@ public class MineClawd {
                     ensureOpenAiHistory(history, systemPrompt);
                     if (preparedPrompt.openAiParts().isEmpty()) {
                         history.add(OpenAIMessage.user(promptForModel));
+                        // 调试：记录用户请求长度
+                        debugResponseLength(runtime, "User Request", promptForModel.length(), 
+                            "Type: Text");
                     } else {
                         history.add(OpenAIMessage.userWithParts(promptForModel, preparedPrompt.openAiParts()));
+                        // 调试：记录用户请求长度（包含parts）
+                        int totalLength = promptForModel.length() + preparedPrompt.openAiParts().stream()
+                            .mapToInt(part -> part.toString().length())
+                            .sum();
+                        debugResponseLength(runtime, "User Request", totalLength, 
+                            "Type: Multi-part");
                     }
                     session.touch();
                     SESSION_MANAGER.saveSession(ownerKey, session);
@@ -2865,13 +3139,32 @@ public class MineClawd {
 
         MineClawdConfig config = MineClawdConfig.get();
         debugLog(runtime, "OpenAI request round=%d retry=%d session=%s", depth + 1, retryCount, runtime.sessionId());
+        
+        // 调试：记录上下文历史长度
+        int historyLength = calculateHistoryLength(history);
+        int systemPromptLength = buildSystemPrompt(source, config, runtime.ownerKey(), 
+                runtime.dynamicRegistryEnabled(), session).length();
+        debugResponseLength(runtime, "Context History", historyLength, 
+            "Messages: " + history.size() + ", System Prompt: " + systemPromptLength + " chars");
+        
         AtomicBoolean streamedThisRound = new AtomicBoolean(false);
+        // 构建消息列表：使用原始history上下文管理
+        List<OpenAIMessage> messagesWithSystemPrompt = new ArrayList<>();
+        if (depth == 0) {
+            // 只在第一次调用时发送系统提示词，避免递归调用中的token浪费
+            messagesWithSystemPrompt.add(OpenAIMessage.system(buildSystemPrompt(source, config, runtime.ownerKey(), 
+                    runtime.dynamicRegistryEnabled(), session)));
+        }
+        
+        // 使用原始history，暂时搁置记忆架构
+        messagesWithSystemPrompt.addAll(history);
+        
         CompletableFuture<OpenAIResponse> requestFuture = OPENAI_CLIENT.sendMessage(
                         config.endpoint,
                         config.apiKey,
                         config.model,
-                        history,
-                        ToolFactory.createOpenAiTools(runtime.dynamicRegistryEnabled(), hasConfiguredTavilyKey(config)),
+                        messagesWithSystemPrompt,  // 使用包含系统提示词的完整消息列表
+                        openAiTools(runtime.dynamicRegistryEnabled(), hasConfiguredTavilyKey(config)),
                         runtime.clientStreamEnabled()
                                 ? chunk -> {
                                     if (chunk == null || chunk.isEmpty()) {
@@ -2976,6 +3269,12 @@ public class MineClawd {
         if (toolCalls != null && !toolCalls.isEmpty()) {
             final boolean hadAssistantTextBeforeTools = text != null && !text.isBlank();
             history.add(OpenAIMessage.assistant(text, toolCalls));
+            
+            // 调试：记录助手响应长度（包含工具调用）
+            int assistantLength = text != null ? text.length() : 0;
+            debugResponseLength(runtime, "Assistant Response", assistantLength, 
+                "Type: With Tool Calls, Count: " + toolCalls.size());
+            
             executeOpenAiToolCallsAsync(source, toolCalls, runtime)
                     .whenComplete((batch, batchError) -> {
                         if (source.getServer() == null) {
@@ -3012,13 +3311,24 @@ public class MineClawd {
         }
 
         history.add(OpenAIMessage.assistant(text, null));
+        
+        // 调试：记录助手响应长度（纯文本）
+        int assistantLength = text != null ? text.length() : 0;
+        debugResponseLength(runtime, "Assistant Response", assistantLength, 
+            "Type: Text Only");
+        
         if (session != null) {
             session.touch();
             SESSION_MANAGER.saveSession(runtime.ownerKey(), session);
         }
         FAILED_REQUESTS_BY_OWNER.remove(runtime.ownerKey());
-        if (session != null) {
-            maybeGenerateSessionTitle(source, MineClawdConfig.get(), MineClawdConfig.LlmProvider.OPENAI, session, text, runtime);
+        if (session != null && depth == 0) {
+            // 只在第一次请求结束时生成会话标题，避免递归调用中的重复生成
+            // 使用运行时实际的provider配置，而不是硬编码的值
+            MineClawdConfig.LlmProvider actualProvider = runtime.provider() != null 
+                ? runtime.provider() 
+                : MineClawdConfig.LlmProvider.OPENAI;
+            maybeGenerateSessionTitle(source, MineClawdConfig.get(), actualProvider, session, text, runtime);
         }
         if (runtime.clientStreamEnabled()) {
             sendAgentStreamEvent(source, runtime, AgentStreamEventType.DONE, "");
@@ -3047,13 +3357,32 @@ public class MineClawd {
 
         MineClawdConfig config = MineClawdConfig.get();
         debugLog(runtime, "Vertex request round=%d retry=%d session=%s", depth + 1, retryCount, runtime.sessionId());
+        
+        // 调试：记录上下文历史长度
+        int historyLength = calculateVertexHistoryLength(history);
+        int systemPromptLength = buildSystemPrompt(source, config, runtime.ownerKey(), 
+                runtime.dynamicRegistryEnabled(), session).length();
+        debugResponseLength(runtime, "Vertex Context History", historyLength, 
+            "Messages: " + history.size() + ", System Prompt: " + systemPromptLength + " chars");
+        
         AtomicBoolean streamedThisRound = new AtomicBoolean(false);
+        // 构建消息列表：使用原始history上下文管理
+        List<VertexAIMessage> messagesWithSystemPrompt = new ArrayList<>();
+        if (depth == 0) {
+            // 只在第一次调用时发送系统提示词，避免递归调用中的token浪费
+            messagesWithSystemPrompt.add(VertexAIMessage.user(buildSystemPrompt(source, config, runtime.ownerKey(), 
+                    runtime.dynamicRegistryEnabled(), session)));
+        }
+        
+        // 使用原始history，暂时搁置记忆架构
+        messagesWithSystemPrompt.addAll(history);
+        
         CompletableFuture<VertexAIResponse> requestFuture = VERTEX_CLIENT.sendMessage(
                         config.vertexEndpoint,
                         config.vertexApiKey,
                         config.vertexModel,
-                        history,
-                        ToolFactory.createVertexTools(runtime.dynamicRegistryEnabled(), hasConfiguredTavilyKey(config)),
+                        messagesWithSystemPrompt,  // 使用包含系统提示词的完整消息列表
+                        vertexTools(runtime.dynamicRegistryEnabled(), hasConfiguredTavilyKey(config)),
                         runtime.clientStreamEnabled()
                                 ? chunk -> {
                                     if (chunk == null || chunk.isEmpty()) {
@@ -3210,8 +3539,13 @@ public class MineClawd {
             SESSION_MANAGER.saveSession(runtime.ownerKey(), session);
         }
         FAILED_REQUESTS_BY_OWNER.remove(runtime.ownerKey());
-        if (session != null) {
-            maybeGenerateSessionTitle(source, MineClawdConfig.get(), MineClawdConfig.LlmProvider.VERTEX_AI, session, text, runtime);
+        if (session != null && depth == 0) {
+            // 只在第一次请求结束时生成会话标题，避免递归调用中的重复生成
+            // 使用运行时实际的provider配置，而不是硬编码的值
+            MineClawdConfig.LlmProvider actualProvider = runtime.provider() != null 
+                ? runtime.provider() 
+                : MineClawdConfig.LlmProvider.VERTEX_AI;
+            maybeGenerateSessionTitle(source, MineClawdConfig.get(), actualProvider, session, text, runtime);
         }
         if (runtime.clientStreamEnabled()) {
             sendAgentStreamEvent(source, runtime, AgentStreamEventType.DONE, "");
@@ -3260,6 +3594,10 @@ public class MineClawd {
         int callIndex = index + 1;
         ToolStatusDescriptor statusDescriptor = announceToolCallProgress(source, runtime, call.name(), args);
         ToolStatusDescriptor completionDescriptor = buildToolStatusCompletedDescriptor(call.name(), args);
+        
+        // 获取该 tool 的 appendix 并添加到 results 中
+        // String toolAppendix = ToolRegistry.getEnabledToolAppendixes().get(call.name());
+        
         debugLog(runtime, "Executing tool (OpenAI) #%d name=%s args=%s", callIndex, call.name(), args);
         return executeToolCallAsync(source, call.name(), args, runtime)
                 .handle((output, throwable) -> {
@@ -3276,9 +3614,34 @@ public class MineClawd {
                     if (toolCallId == null || toolCallId.isBlank()) {
                         toolCallId = "unknown";
                     }
-                    results.add(OpenAIMessage.tool(toolCallId, finalOutput));
+                    
+                    // // 如果有 appendix，先添加 appendix 作为 system 消息（符合OpenAI API规范）
+                    // if (toolAppendix != null && !toolAppendix.isBlank()) {
+                    //     results.add(OpenAIMessage.system("Tool Details:\n" + toolAppendix));
+                    // }
+                    
+                    // 使用符合OpenAI API规范的响应格式
+                    JsonObject apiCompliantResponse = new JsonObject();
+                    if (throwable != null || finalOutput.startsWith("ERROR:")) {
+                        apiCompliantResponse.addProperty("error", finalOutput);
+                        apiCompliantResponse.addProperty("success", false);
+                    } else {
+                        apiCompliantResponse.addProperty("result", finalOutput);
+                        apiCompliantResponse.addProperty("success", true);
+                    }
+                    
+                    // 添加toolname字段，便于记忆系统识别
+                    apiCompliantResponse.addProperty("toolname", call.name());
+                    
+                    // tool 消息包含符合API规范的JSON响应
+                    String apiResponse = apiCompliantResponse.toString();
+                    results.add(OpenAIMessage.tool(toolCallId, apiResponse));
                     outputs.add(finalOutput);
                     signatures.add(call.name() + ":" + args);
+                    
+                    // 调试：记录响应长度
+                    debugResponseLength(runtime, "OpenAI Tool Response", apiResponse.length(), 
+                        "Tool: " + call.name() + ", CallID: " + toolCallId);
                     return null;
                 })
                 .thenCompose(unused -> executeOpenAiToolCallsSequential(
@@ -3340,6 +3703,10 @@ public class MineClawd {
         int callIndex = index + 1;
         ToolStatusDescriptor statusDescriptor = announceToolCallProgress(source, runtime, call.name(), args);
         ToolStatusDescriptor completionDescriptor = buildToolStatusCompletedDescriptor(call.name(), args);
+        
+        // 获取该 tool 的 appendix（VertexAI API规范）
+        String toolAppendix = ToolRegistry.getEnabledToolAppendixes().get(call.name());
+        
         debugLog(runtime, "Executing tool (Vertex) #%d name=%s args=%s", callIndex, call.name(), args);
         return executeToolCallAsync(source, call.name(), args, runtime)
                 .handle((output, throwable) -> {
@@ -3353,11 +3720,34 @@ public class MineClawd {
                     debugLog(runtime, "Tool output #%d: %s", callIndex, finalOutput);
                     agentLog(runtime, "Tool result: %s -> %s", call.name(), finalOutput);
                     JsonObject response = new JsonObject();
-                    response.addProperty("result", finalOutput);
-                    response.addProperty("is_error", finalOutput.startsWith("ERROR:"));
+                    if (throwable != null || finalOutput.startsWith("ERROR:")) {
+                        response.addProperty("error", finalOutput);
+                        response.addProperty("success", false);
+                    } else {
+                        response.addProperty("result", finalOutput);
+                        response.addProperty("success", true);
+                    }
+                    
+                    // 添加toolname字段，便于记忆系统识别
+                    response.addProperty("toolname", call.name());
+                    
+                    // 如果有 appendix，先添加 appendix 作为 function response
+                    if (toolAppendix != null && !toolAppendix.isBlank()) {
+                        JsonObject appendixResponse = new JsonObject();
+                        appendixResponse.addProperty("result", "Tool Details:\n" + toolAppendix);
+                        appendixResponse.addProperty("success", true);
+                        responseParts.add(VertexAIMessage.functionResponsePart(call.name(), appendixResponse));
+                    }
+                    
+                    // 调试：记录响应长度
+                    String responseJson = response.toString();
                     responseParts.add(VertexAIMessage.functionResponsePart(call.name(), response));
                     outputs.add(finalOutput);
                     signatures.add(call.name() + ":" + args);
+                    
+                    // 调试：记录响应长度
+                    debugResponseLength(runtime, "VertexAI Tool Response", responseJson.length(), 
+                        "Tool: " + call.name());
                     return null;
                 })
                 .thenCompose(unused -> executeVertexToolCallsSequential(
@@ -3377,9 +3767,23 @@ public class MineClawd {
             JsonObject args,
             AgentRuntime runtime
     ) {
-        if (TOOL_ASK_USER.equals(toolName)) {
-            return askUserQuestion(source, args, runtime);
+        // 从 ToolRegistry 获取工具
+        MineClawdTool tool = ToolRegistry.get(toolName);
+        if (tool == null) {
+            return CompletableFuture.completedFuture("ERROR: Unknown tool " + toolName);
         }
+        
+        // 特殊处理异步工具（如 ask-user-question）
+        if (tool.supportsAsync()) {
+            // 异步工具需要特殊处理
+            if ("ask-user-question".equals(toolName)) {
+                return askUserQuestion(source, args, runtime);
+            }
+            // 其他异步工具使用默认异步执行
+            return CompletableFuture.supplyAsync(() -> executeToolCallSync(source, toolName, args, runtime));
+        }
+        
+        // 否则同步执行
         return CompletableFuture.completedFuture(executeToolCallSync(source, toolName, args, runtime));
     }
 
@@ -3393,215 +3797,17 @@ public class MineClawd {
         String ownerKey = runtime == null || runtime.ownerKey() == null || runtime.ownerKey().isBlank()
                 ? sessionOwnerKey(source)
                 : runtime.ownerKey();
-        MineClawdConfig config = MineClawdConfig.get();
         
-        ToolExecutionResult result;
-        switch (toolName) {
-            case TOOL_APPLY_INSTANT_SERVER_SCRIPT:
-            case LEGACY_TOOL_KUBEJS_EVAL:
-                String code = readRequiredStringArg(args, "code");
-                if (code == null || code.isBlank()) {
-                    return "ERROR: Tool call is missing required string `code`.";
-                }
-                result = KubeJsToolExecutor.executeInstant(source, code);
-                break;
-            case TOOL_EXECUTE_COMMAND:
-                String command = readRequiredStringArg(args, "command");
-                if (command == null || command.isBlank()) {
-                    return "ERROR: Tool call is missing required string `command`.";
-                }
-                result = KubeJsToolExecutor.executeCommand(source, command);
-                break;
-            case TOOL_SEARCH:
-                if (!hasConfiguredTavilyKey(config)) {
-                    return "ERROR: Search tool is disabled. Configure `tavily-api-key` first.";
-                }
-                String query = readRequiredStringArg(args, "query");
-                if (query == null || query.isBlank()) {
-                    return "ERROR: Tool call is missing required string `query`.";
-                }
-                result = SearchToolExecutor.searchWeb(config.tavilyApiKey, query, readOptionalIntArg(args, "max_results"));
-                break;
-            case TOOL_LIST_COMMANDS:
-                result = ModDocsToolExecutor.listCommands(source, readOptionalStringArg(args, "mod_id"));
-                break;
-            case TOOL_FETCH_MODRINTH:
-                String modrinthModId = readRequiredStringArg(args, "mod_id");
-                if (modrinthModId == null || modrinthModId.isBlank()) {
-                    return "ERROR: Tool call is missing required string `mod_id`.";
-                }
-                result = ModDocsToolExecutor.fetchModrinth(modrinthModId);
-                break;
-            case TOOL_FETCH_URL:
-                String docsUrl = readRequiredStringArg(args, "url");
-                if (docsUrl == null || docsUrl.isBlank()) {
-                    return "ERROR: Tool call is missing required string `url`.";
-                }
-                result = ModDocsToolExecutor.fetchUrl(docsUrl);
-                break;
-            case TOOL_LIST_FILES:
-                result = WorkspaceFileToolExecutor.listFiles(
-                        source,
-                        readOptionalStringArg(args, "path"),
-                        readOptionalBooleanArg(args, "recursive"),
-                        readOptionalIntArg(args, "limit")
-                );
-                break;
-            case TOOL_READ_FILES:
-                String readPath = readRequiredStringArg(args, "path");
-                if (readPath == null || readPath.isBlank()) {
-                    return "ERROR: Tool call is missing required string `path`.";
-                }
-                result = WorkspaceFileToolExecutor.readFile(source, readPath);
-                break;
-            case TOOL_WRITE_FILES:
-                String writePath = readRequiredStringArg(args, "path");
-                if (writePath == null || writePath.isBlank()) {
-                    return "ERROR: Tool call is missing required string `path`.";
-                }
-                String content = readRequiredStringArg(args, "content");
-                if (content == null) {
-                    return "ERROR: Tool call is missing required string `content`.";
-                }
-                result = WorkspaceFileToolExecutor.writeFile(source, writePath, content);
-                break;
-            case TOOL_COPY_FILES:
-                String fromPath = readRequiredStringArg(args, "from");
-                String toPath = readRequiredStringArg(args, "to");
-                if (fromPath == null || fromPath.isBlank() || toPath == null || toPath.isBlank()) {
-                    return "ERROR: Tool call requires string `from` and `to`.";
-                }
-                result = WorkspaceFileToolExecutor.copyFiles(source, fromPath, toPath);
-                break;
-            case TOOL_MOVE_FILES:
-                String moveFromPath = readRequiredStringArg(args, "from");
-                String moveToPath = readRequiredStringArg(args, "to");
-                if (moveFromPath == null || moveFromPath.isBlank() || moveToPath == null || moveToPath.isBlank()) {
-                    return "ERROR: Tool call requires string `from` and `to`.";
-                }
-                result = WorkspaceFileToolExecutor.moveFiles(source, moveFromPath, moveToPath);
-                break;
-            case TOOL_GREP:
-                String pattern = readRequiredStringArg(args, "pattern");
-                if (pattern == null || pattern.isBlank()) {
-                    return "ERROR: Tool call is missing required string `pattern`.";
-                }
-                result = WorkspaceFileToolExecutor.grepFiles(
-                        source,
-                        pattern,
-                        readOptionalStringArg(args, "path"),
-                        readOptionalStringArg(args, "glob"),
-                        readOptionalBooleanArg(args, "case_sensitive"),
-                        readOptionalIntArg(args, "max_matches")
-                );
-                break;
-            case TOOL_CURL:
-                String url = readRequiredStringArg(args, "url");
-                if (url == null || url.isBlank()) {
-                    return "ERROR: Tool call is missing required string `url`.";
-                }
-                result = WorkspaceFileToolExecutor.curl(
-                        url,
-                        readOptionalStringArg(args, "method"),
-                        readOptionalStringArg(args, "body"),
-                        readOptionalStringMapArg(args, "headers"),
-                        readOptionalIntArg(args, "timeout_seconds")
-                );
-                break;
-            case TOOL_READ_IMAGE:
-                String imagePath = readRequiredStringArg(args, "path");
-                if (imagePath == null || imagePath.isBlank()) {
-                    return "ERROR: Tool call is missing required string `path`.";
-                }
-                result = readImageTool(source, runtime, imagePath, readOptionalStringArg(args, "prompt"));
-                break;
-            case TOOL_RELOAD_GAME:
-                result = KubeJsToolExecutor.reloadGame(source);
-                break;
-            case TOOL_SYNC_COMMAND_TREE:
-                result = KubeJsToolExecutor.syncCommandTree(source);
-                break;
-            case TOOL_LIST_DYNAMIC_CONTENT:
-                result = DynamicContentToolExecutor.list();
-                break;
-            case TOOL_REGISTER_DYNAMIC_ITEM:
-                result = DynamicContentToolExecutor.registerItem(
-                        source,
-                        readOptionalIntArg(args, "slot"),
-                        readRequiredStringArg(args, "name"),
-                        readRequiredStringArg(args, "material_item"),
-                        readOptionalBooleanArg(args, "throwable")
-                );
-                break;
-            case TOOL_REGISTER_DYNAMIC_BLOCK:
-                result = DynamicContentToolExecutor.registerBlock(
-                        source,
-                        readOptionalIntArg(args, "slot"),
-                        readRequiredStringArg(args, "name"),
-                        readRequiredStringArg(args, "material_block"),
-                        readOptionalDoubleArg(args, "friction")
-                );
-                break;
-            case TOOL_REGISTER_DYNAMIC_FLUID:
-                result = DynamicContentToolExecutor.registerFluid(
-                        source,
-                        readOptionalIntArg(args, "slot"),
-                        readRequiredStringArg(args, "name"),
-                        readRequiredStringArg(args, "material_fluid"),
-                        readRequiredStringArg(args, "color")
-                );
-                break;
-            case TOOL_UPDATE_DYNAMIC_ITEM:
-                result = DynamicContentToolExecutor.updateItem(
-                        source,
-                        readOptionalIntArg(args, "slot"),
-                        readRequiredStringArg(args, "name"),
-                        readRequiredStringArg(args, "material_item"),
-                        readOptionalBooleanArg(args, "throwable")
-                );
-                break;
-            case TOOL_UPDATE_DYNAMIC_BLOCK:
-                result = DynamicContentToolExecutor.updateBlock(
-                        source,
-                        readOptionalIntArg(args, "slot"),
-                        readRequiredStringArg(args, "name"),
-                        readRequiredStringArg(args, "material_block"),
-                        readOptionalDoubleArg(args, "friction")
-                );
-                break;
-            case TOOL_UPDATE_DYNAMIC_FLUID:
-                result = DynamicContentToolExecutor.updateFluid(
-                        source,
-                        readOptionalIntArg(args, "slot"),
-                        readRequiredStringArg(args, "name"),
-                        readRequiredStringArg(args, "material_fluid"),
-                        readRequiredStringArg(args, "color")
-                );
-                break;
-            case TOOL_UNREGISTER_DYNAMIC_CONTENT:
-                result = DynamicContentToolExecutor.unregister(
-                        source,
-                        readRequiredStringArg(args, "type"),
-                        readOptionalIntArg(args, "slot")
-                );
-                break;
-            case TOOL_LIST_ASSETS:
-                result = listAssetsTool(ownerKey);
-                break;
-            case TOOL_UPSERT_ASSET_RECORD:
-                result = upsertAssetRecordTool(ownerKey, args);
-                break;
-            case TOOL_REMOVE_ASSET_RECORD:
-                result = removeAssetRecordTool(ownerKey, args);
-                break;
-            default:
-                return "ERROR: Unknown tool " + toolName;
+        // 从 ToolRegistry 获取工具
+        MineClawdTool tool = ToolRegistry.get(toolName);
+        if (tool == null) {
+            return "ERROR: Unknown tool " + toolName;
         }
-
-        if (result.success()) {
-            return result.output();
-        }
-        return "ERROR: " + result.output();
+        
+        ToolExecutorWrapper wrapper = new ToolExecutorWrapper(tool);
+        String result = wrapper.execute(source, args);
+        
+        return result;
     }
 
     private JsonObject parseToolArguments(String arguments) {
@@ -4761,34 +4967,133 @@ public class MineClawd {
         return UUID.randomUUID().toString().replace("-", "").substring(0, QUESTION_ID_LENGTH).toLowerCase(Locale.ROOT);
     }
 
+    private List<OpenAITool> openAiTools(boolean dynamicRegistryEnabled, boolean searchEnabled) {
+        List<OpenAITool> tools = new ArrayList<>();
+        
+        // 从 ToolRegistry 获取所有启用的工具
+        Map<String, MineClawdTool> enabledTools = ToolRegistry.getAllEnabled();
+        
+        // 根据每个工具的揭露策略决定是否包含在tools角色中
+        enabledTools.forEach((name, tool) -> {
+            try {
+                MineClawdTool.RevealPolicy policy = tool.getRevealPolicy();
+                
+                // 根据策略决定是否包含该工具
+                if (shouldIncludeToolInRequest(tool, policy)) {
+                    ToolExecutorWrapper wrapper = new ToolExecutorWrapper(tool);
+                    OpenAITool openAITool = wrapper.toOpenAITool();
+                    if (openAITool != null) {
+                        tools.add(openAITool);
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.warn("Error processing reveal policy for tool {}: {}", name, e.getMessage());
+                // 出错时默认不包含该工具
+            }
+        });
+        
+        return List.copyOf(tools);
+    }
+    
+    /**
+     * 根据工具的揭露策略决定是否在当前请求中包含该工具
+     */
+    private boolean shouldIncludeToolInRequest(MineClawdTool tool, MineClawdTool.RevealPolicy policy) {
+        if (policy == null) {
+            return false; // 没有策略默认不包含
+        }
+        
+        MineClawdTool.RevealTiming timing = policy.getTiming();
+        
+        switch (timing) {
+            case AGGRESSIVE:
+                // 积极策略：始终在tools角色中提供
+                return true;
+                
+            case ACTIVE:
+                // 主动策略：保存在系统提示词中，不在tools角色中提供
+                return false;
+                
+            case PASSIVE:
+                // 被动策略：只在明确请求时包含
+                return false; // 从不包含，除非通过tool-info-request明确请求
+                
+            default:
+                return false;
+        }
+    }
+    
+    // 会话初始化状态管理已移除，工具选择不再依赖会话状态
+
+    private List<VertexAIFunction> vertexTools(boolean dynamicRegistryEnabled, boolean searchEnabled) {
+        List<VertexAIFunction> tools = new ArrayList<>();
+        
+        // 从 ToolRegistry 获取所有启用的工具
+        Map<String, MineClawdTool> enabledTools = ToolRegistry.getAllEnabled();
+        
+        // 根据每个工具的揭露策略决定是否包含在tools角色中
+        enabledTools.forEach((name, tool) -> {
+            try {
+                MineClawdTool.RevealPolicy policy = tool.getRevealPolicy();
+                
+                // 根据策略决定是否包含该工具
+                if (shouldIncludeToolInRequest(tool, policy)) {
+                    ToolExecutorWrapper wrapper = new ToolExecutorWrapper(tool);
+                    VertexAIFunction vertexAIFunction = wrapper.toVertexAIFunction();
+                    if (vertexAIFunction != null) {
+                        tools.add(vertexAIFunction);
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.warn("Error processing reveal policy for tool {}: {}", name, e.getMessage());
+                // 出错时默认不包含该工具
+            }
+        });
+        
+        return List.copyOf(tools);
+    }
+
     private void ensureOpenAiHistory(List<OpenAIMessage> history, String systemPrompt) {
+        // 系统提示词每次都会通过API发送给LLM，不需要记录到历史中
+        // 这样可以避免系统提示词在上下文中重复累积，减少token消耗
+        
+        // 只在历史为空时添加一个简短的占位符
         if (history.isEmpty()) {
-            history.add(OpenAIMessage.system(systemPrompt));
+            history.add(OpenAIMessage.system("新会话开始"));
             return;
         }
+        
+        // 检查第一条消息是否是系统消息，如果是则移除
         OpenAIMessage first = history.get(0);
-        if (first == null || !"system".equals(first.role())) {
-            history.add(0, OpenAIMessage.system(systemPrompt));
-            return;
+        if (first != null && "system".equals(first.role())) {
+            // 移除系统提示词，因为它会在API调用时单独传递
+            history.remove(0);
         }
-        // 强制更新系统提示词以确保外部prompt修改能够生效
-        // 不再检查内容是否相同，直接更新
-        history.set(0, OpenAIMessage.system(systemPrompt));
+        
+        // 如果系统提示词有实质性变化，可能需要重新初始化上下文
+        // 这里简化处理，保持现有历史不变
     }
 
     private void ensureVertexHistory(List<VertexAIMessage> history, String systemPrompt) {
+        // 系统提示词每次都会通过API发送给LLM，不需要记录到历史中
+        // Vertex AI使用user角色传递系统提示词，同样不需要重复记录
+        
+        // 只在历史为空时添加一个占位符，表示这是新会话
         if (history.isEmpty()) {
-            history.add(VertexAIMessage.user(systemPrompt));
+            history.add(VertexAIMessage.user("[系统提示词已在API调用中单独传递]"));
             return;
         }
+        
+        // 检查第一条消息是否包含系统提示词，如果是则移除或替换
         VertexAIMessage first = history.get(0);
-        if (first == null || !"user".equals(first.role()) || first.parts() == null || first.parts().isEmpty()) {
-            history.add(0, VertexAIMessage.user(systemPrompt));
-            return;
+        if (first != null && "user".equals(first.role()) && 
+            first.parts() != null && !first.parts().isEmpty()) {
+            
+            // 如果系统提示词有实质性变化，可能需要重新初始化
+            // 这里简化处理，保持现有历史不变
+            // 系统提示词的变化会在API调用时处理
         }
-        // 强制更新系统提示词以确保外部prompt修改能够生效
-        // 不再检查内容是否相同，直接更新
-        history.set(0, VertexAIMessage.user(systemPrompt));
+        // 保持现有历史不变，不添加系统提示词
     }
 
     private boolean normalizeVertexFunctionCallTurns(List<VertexAIMessage> history, AgentRuntime runtime) {
@@ -4989,8 +5294,21 @@ public class MineClawd {
             prompt.append("\n\n")
                     .append(ASSET_TRACKING_PROMPT_APPENDIX);
         }
+        
+        // 动态添加工具使用说明（智能上下文管理）
+        // 使用新的揭露式提示词系统，不再依赖会话初始化状态
+        String sessionId = session != null ? session.id() : null;
+        String toolInstructions = com.mineclawd.foundation.tool.prompt.RevealedToolPromptSystem.buildSystemPrompt(
+            sessionId, false // 不再依赖会话初始化状态
+        );
+        if (!toolInstructions.isBlank()) {
+            prompt.append("\n\n").append(toolInstructions);
+        }
+        
         return prompt.toString();
     }
+
+
 
     private String buildEnvironmentInfo() {
         String mc = "";
@@ -5116,19 +5434,16 @@ public class MineClawd {
         if (input.isBlank()) {
             return Text.empty();
         }
-        try {
-            Component parsed = MineDown.parse(input);
-            String json = ADVENTURE_GSON.serialize(parsed);
-            Text text = source == null
-                    ? null
-                    : Text.Serialization.fromJson(json, source.getRegistryManager());
-            if (text != null) {
-                return text;
-            }
-        } catch (Exception exception) {
-            LOGGER.debug("MineDown parse fallback: {}", exception.getMessage());
-        }
-        return Text.literal(input);
+        
+        // 使用 Minecraft 自带的文本格式化功能替代 MineDown
+        // 简单的文本格式化：将 Markdown 风格的 **粗体** 和 *斜体* 转换为 Minecraft 格式
+        String formatted = input
+                .replace("**", "§l")  // 粗体
+                .replace("*", "§o")   // 斜体
+                .replace("§l§l", "")  // 清理多余的格式代码
+                .replace("§o§o", ""); // 清理多余的格式代码
+        
+        return Text.literal(formatted);
     }
 
     private String normalizeMineDownActions(String markdown) {
@@ -5210,216 +5525,18 @@ public class MineClawd {
     }
 
     private ToolStatusDescriptor buildToolStatusDescriptor(String toolName, JsonObject args) {
-        String normalizedName = toolName == null ? "" : toolName.trim();
-        String shortText;
-        String hoverText = "";
-
-        switch (normalizedName) {
-            case TOOL_EXECUTE_COMMAND -> {
-                String command = readOptionalStringArg(args, "command");
-                shortText = "Executing command " + summarizeCommandForStatus(command);
-                hoverText = command.isBlank() ? "" : "Command: " + normalizeCommandForHover(command);
-            }
-            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, LEGACY_TOOL_KUBEJS_EVAL -> {
-                shortText = "Applying instant script";
-                hoverText = "Executing KubeJS instant script (code hidden).";
-            }
-            case TOOL_LIST_COMMANDS -> {
-                String modId = readOptionalStringArg(args, "mod_id");
-                shortText = modId.isBlank() ? "Listing commands" : "Listing commands for " + modId;
-                hoverText = modId.isBlank() ? "Listing server root commands." : "Filter mod_id: " + modId;
-            }
-            case TOOL_FETCH_URL -> {
-                String rawUrl = readOptionalStringArg(args, "url");
-                String host = extractUrlHost(rawUrl);
-                shortText = host.isBlank() ? "Fetching URL" : "Fetching " + host;
-                hoverText = rawUrl.isBlank() ? "Fetching URL content." : "URL: " + rawUrl.trim();
-            }
-            case TOOL_FETCH_MODRINTH -> {
-                String modId = readOptionalStringArg(args, "mod_id");
-                shortText = modId.isBlank() ? "Fetching Modrinth page" : "Fetching Modrinth page for " + modId;
-                hoverText = modId.isBlank() ? "Fetching Modrinth project page." : "Modrinth mod_id: " + modId;
-            }
-            case TOOL_SEARCH -> {
-                String query = readOptionalStringArg(args, "query");
-                shortText = "Searching the web";
-                hoverText = query.isBlank() ? "Web search query unavailable." : "Query: " + query;
-            }
-            case TOOL_LIST_FILES -> {
-                String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Listing files" : "Listing files in " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "Listing paths under server root." : "Path: " + path;
-            }
-            case TOOL_READ_FILES -> {
-                String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Reading file" : "Reading " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "" : "Path: " + path;
-            }
-            case TOOL_WRITE_FILES -> {
-                String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Writing file" : "Writing " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "Writing a server file." : "Path: " + path;
-            }
-            case TOOL_COPY_FILES -> {
-                shortText = "Copying files";
-                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
-            }
-            case TOOL_MOVE_FILES -> {
-                shortText = "Moving files";
-                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
-            }
-            case TOOL_GREP -> {
-                shortText = "Searching files";
-                hoverText = "Pattern: " + readOptionalStringArg(args, "pattern");
-            }
-            case TOOL_CURL -> {
-                String rawUrl = readOptionalStringArg(args, "url");
-                String host = extractUrlHost(rawUrl);
-                shortText = host.isBlank() ? "Running curl" : "Requesting " + host;
-                hoverText = rawUrl.isBlank() ? "" : "URL: " + rawUrl;
-            }
-            case TOOL_READ_IMAGE -> {
-                String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Reading image" : "Reading image " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "" : "Path: " + path;
-            }
-            case TOOL_RELOAD_GAME -> {
-                shortText = "Reloading game scripts";
-                hoverText = "Running /reload and checking KubeJS loading errors.";
-            }
-            case TOOL_SYNC_COMMAND_TREE -> {
-                shortText = "Syncing command tree";
-                hoverText = "Refreshing command suggestions for online players.";
-            }
-            case TOOL_ASK_USER -> {
-                shortText = "Asking a clarification question";
-                hoverText = readOptionalStringArg(args, "question");
-            }
-            case TOOL_LIST_DYNAMIC_CONTENT -> shortText = "Inspecting dynamic content slots";
-            case TOOL_REGISTER_DYNAMIC_ITEM, TOOL_REGISTER_DYNAMIC_BLOCK, TOOL_REGISTER_DYNAMIC_FLUID ->
-                    shortText = "Registering dynamic content";
-            case TOOL_UPDATE_DYNAMIC_ITEM, TOOL_UPDATE_DYNAMIC_BLOCK, TOOL_UPDATE_DYNAMIC_FLUID ->
-                    shortText = "Updating dynamic content";
-            case TOOL_UNREGISTER_DYNAMIC_CONTENT -> shortText = "Unregistering dynamic content";
-            case TOOL_LIST_ASSETS -> shortText = "Listing tracked assets";
-            case TOOL_UPSERT_ASSET_RECORD -> shortText = "Updating tracked asset";
-            case TOOL_REMOVE_ASSET_RECORD -> shortText = "Removing tracked asset";
-            default -> {
-                shortText = "Running task step";
-                hoverText = normalizedName.isBlank() ? "" : "Tool: " + normalizedName;
-            }
-        }
-
+        ToolStatusDescriptor descriptor = ToolRegistry.getToolStatusDescriptor(toolName, toolName, args);
         return new ToolStatusDescriptor(
-                normalizeStatusText(shortText, 220),
-                normalizeStatusText(hoverText, 700)
+                normalizeStatusText(descriptor.shortText(), 220),
+                normalizeStatusText(descriptor.hoverText(), 700)
         );
     }
 
     private ToolStatusDescriptor buildToolStatusCompletedDescriptor(String toolName, JsonObject args) {
-        String normalizedName = toolName == null ? "" : toolName.trim();
-        String shortText;
-        String hoverText = "";
-
-        switch (normalizedName) {
-            case TOOL_EXECUTE_COMMAND -> {
-                String command = readOptionalStringArg(args, "command");
-                shortText = "Executed command " + summarizeCommandForStatus(command);
-                hoverText = command.isBlank() ? "" : "Command: " + normalizeCommandForHover(command);
-            }
-            case TOOL_APPLY_INSTANT_SERVER_SCRIPT, LEGACY_TOOL_KUBEJS_EVAL -> {
-                shortText = "Applied instant script";
-                hoverText = "Executed KubeJS instant script (code hidden).";
-            }
-            case TOOL_LIST_COMMANDS -> {
-                String modId = readOptionalStringArg(args, "mod_id");
-                shortText = modId.isBlank() ? "Listed commands" : "Listed commands for " + modId;
-                hoverText = modId.isBlank() ? "Listed server root commands." : "Filter mod_id: " + modId;
-            }
-            case TOOL_FETCH_URL -> {
-                String rawUrl = readOptionalStringArg(args, "url");
-                String host = extractUrlHost(rawUrl);
-                shortText = host.isBlank() ? "Fetched URL" : "Fetched " + host;
-                hoverText = rawUrl.isBlank() ? "Fetched URL content." : "URL: " + rawUrl.trim();
-            }
-            case TOOL_FETCH_MODRINTH -> {
-                String modId = readOptionalStringArg(args, "mod_id");
-                shortText = modId.isBlank() ? "Fetched Modrinth page" : "Fetched Modrinth page for " + modId;
-                hoverText = modId.isBlank() ? "Fetched Modrinth project page." : "Modrinth mod_id: " + modId;
-            }
-            case TOOL_SEARCH -> {
-                String query = readOptionalStringArg(args, "query");
-                shortText = "Completed web search";
-                hoverText = query.isBlank() ? "Web search query unavailable." : "Query: " + query;
-            }
-            case TOOL_LIST_FILES -> {
-                String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Listed files" : "Listed files in " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "Listed paths under server root." : "Path: " + path;
-            }
-            case TOOL_READ_FILES -> {
-                String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Read file" : "Read " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "" : "Path: " + path;
-            }
-            case TOOL_WRITE_FILES -> {
-                String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Wrote file" : "Wrote " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "Wrote a server file." : "Path: " + path;
-            }
-            case TOOL_COPY_FILES -> {
-                shortText = "Copied files";
-                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
-            }
-            case TOOL_MOVE_FILES -> {
-                shortText = "Moved files";
-                hoverText = "From: " + readOptionalStringArg(args, "from") + " -> To: " + readOptionalStringArg(args, "to");
-            }
-            case TOOL_GREP -> {
-                shortText = "Searched files";
-                hoverText = "Pattern: " + readOptionalStringArg(args, "pattern");
-            }
-            case TOOL_CURL -> {
-                String rawUrl = readOptionalStringArg(args, "url");
-                String host = extractUrlHost(rawUrl);
-                shortText = host.isBlank() ? "Completed curl" : "Fetched " + host;
-                hoverText = rawUrl.isBlank() ? "" : "URL: " + rawUrl;
-            }
-            case TOOL_READ_IMAGE -> {
-                String path = readOptionalStringArg(args, "path");
-                shortText = path.isBlank() ? "Read image" : "Read image " + summarizePathTail(path);
-                hoverText = path.isBlank() ? "" : "Path: " + path;
-            }
-            case TOOL_RELOAD_GAME -> {
-                shortText = "Reloaded game scripts";
-                hoverText = "Ran /reload and checked KubeJS loading errors.";
-            }
-            case TOOL_SYNC_COMMAND_TREE -> {
-                shortText = "Synced command tree";
-                hoverText = "Refreshed command suggestions for online players.";
-            }
-            case TOOL_ASK_USER -> {
-                shortText = "Asked a clarification question";
-                hoverText = readOptionalStringArg(args, "question");
-            }
-            case TOOL_LIST_DYNAMIC_CONTENT -> shortText = "Inspected dynamic content slots";
-            case TOOL_REGISTER_DYNAMIC_ITEM, TOOL_REGISTER_DYNAMIC_BLOCK, TOOL_REGISTER_DYNAMIC_FLUID ->
-                    shortText = "Registered dynamic content";
-            case TOOL_UPDATE_DYNAMIC_ITEM, TOOL_UPDATE_DYNAMIC_BLOCK, TOOL_UPDATE_DYNAMIC_FLUID ->
-                    shortText = "Updated dynamic content";
-            case TOOL_UNREGISTER_DYNAMIC_CONTENT -> shortText = "Unregistered dynamic content";
-            case TOOL_LIST_ASSETS -> shortText = "Listed tracked assets";
-            case TOOL_UPSERT_ASSET_RECORD -> shortText = "Updated tracked asset";
-            case TOOL_REMOVE_ASSET_RECORD -> shortText = "Removed tracked asset";
-            default -> {
-                shortText = "Completed task step";
-                hoverText = normalizedName.isBlank() ? "" : "Tool: " + normalizedName;
-            }
-        }
-
+        ToolStatusDescriptor descriptor = ToolRegistry.getToolStatusDescriptor(toolName, toolName, args);
         return new ToolStatusDescriptor(
-                normalizeStatusText(shortText, 220),
-                normalizeStatusText(hoverText, 700)
+                normalizeStatusText(descriptor.shortText(), 220),
+                normalizeStatusText(descriptor.hoverText(), 700)
         );
     }
 
@@ -5435,51 +5552,53 @@ public class MineClawd {
         return normalized;
     }
 
-    private String summarizeCommandForStatus(String command) {
-        String normalized = command == null ? "" : command.trim();
-        if (normalized.isBlank()) {
-            return "command";
-        }
-        if (!normalized.startsWith("/")) {
-            normalized = "/" + normalized;
-        }
-        int space = normalized.indexOf(' ');
-        if (space > 0) {
-            return normalized.substring(0, space);
-        }
-        return normalized;
-    }
+    // 旧架构的状态描述辅助方法（已迁移到 MineClawdTool.getToolStatusDescriptor()，不再使用）
+    // private String summarizeCommandForStatus(String command) {
+    //     String normalized = command == null ? "" : command.trim();
+    //     if (normalized.isBlank()) {
+    //         return "command";
+    //     }
+    //     if (!normalized.startsWith("/")) {
+    //         normalized = "/" + normalized;
+    //     }
+    //     int space = normalized.indexOf(' ');
+    //     if (space > 0) {
+    //         return normalized.substring(0, space);
+    //     }
+    //     return normalized;
+    // }
 
-    private String normalizeCommandForHover(String command) {
-        String normalized = command == null ? "" : command.trim();
-        if (normalized.isBlank()) {
-            return "";
-        }
-        if (!normalized.startsWith("/")) {
-            normalized = "/" + normalized;
-        }
-        return normalizeStatusText(normalized, 700);
-    }
+    // private String normalizeCommandForHover(String command) {
+    //     String normalized = command == null ? "" : command.trim();
+    //     if (normalized.isBlank()) {
+    //         return "";
+    //     }
+    //     if (!normalized.startsWith("/")) {
+    //         normalized = "/" + normalized;
+    //     }
+    //     return normalizeStatusText(normalized, 700);
+    // }
 
-    private String extractUrlHost(String rawUrl) {
-        if (rawUrl == null || rawUrl.isBlank()) {
-            return "";
-        }
-        try {
-            URI uri = URI.create(rawUrl.trim());
-            String host = uri.getHost();
-            if (host == null || host.isBlank()) {
-                return "";
-            }
-            String lower = host.toLowerCase(Locale.ROOT);
-            if (lower.startsWith("www.")) {
-                lower = lower.substring(4);
-            }
-            return lower;
-        } catch (Exception ignored) {
-            return "";
-        }
-    }
+    // 旧架构的 URL 提取方法（已迁移到新工具，不再使用）
+    // private String extractUrlHost(String rawUrl) {
+    //     if (rawUrl == null || rawUrl.isBlank()) {
+    //         return "";
+    //     }
+    //     try {
+    //         URI uri = URI.create(rawUrl.trim());
+    //         String host = uri.getHost();
+    //         if (host == null || host.isBlank()) {
+    //             return "";
+    //         }
+    //         String lower = host.toLowerCase(Locale.ROOT);
+    //         if (lower.startsWith("www.")) {
+    //             lower = lower.substring(4);
+    //         }
+    //         return lower;
+    //     } catch (Exception ignored) {
+    //         return "";
+    //     }
+    // }
 
     private String normalizeStatusText(String text, int maxChars) {
         String normalized = text == null ? "" : text.replace('\r', ' ').replace('\n', ' ').trim();
@@ -5497,6 +5616,93 @@ public class MineClawd {
             return;
         }
         LOGGER.info("[MineClawd Debug] [session:{}] {}", runtime.sessionId(), String.format(format, args));
+    }
+    
+    /**
+     * 调试日志：记录响应长度统计
+     */
+    private void debugResponseLength(AgentRuntime runtime, String responseType, int length, String details) {
+        if (runtime == null || !runtime.debug()) {
+            return;
+        }
+        LOGGER.info("[MineClawd Debug] [session:{}] Response Length - Type: {}, Length: {} chars{}", 
+            runtime.sessionId(), responseType, length, details != null ? ", Details: " + details : "");
+    }
+
+    /**
+     * 计算历史消息的总长度
+     */
+    private int calculateHistoryLength(List<OpenAIMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return 0;
+        }
+        
+        int totalLength = 0;
+        for (OpenAIMessage message : history) {
+            if (message != null) {
+                // 计算消息内容长度
+                if (message.content() != null) {
+                    totalLength += message.content().length();
+                }
+                
+                // 计算工具调用描述长度（如果有）
+                if (message.toolCalls() != null && !message.toolCalls().isEmpty()) {
+                    for (OpenAIToolCall toolCall : message.toolCalls()) {
+                        if (toolCall != null) {
+                            if (toolCall.name() != null) {
+                                totalLength += toolCall.name().length();
+                            }
+                            if (toolCall.arguments() != null) {
+                                totalLength += toolCall.arguments().length();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return totalLength;
+    }
+
+    /**
+     * 计算Vertex AI历史消息的总长度
+     */
+    private int calculateVertexHistoryLength(List<VertexAIMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return 0;
+        }
+        
+        int totalLength = 0;
+        for (VertexAIMessage message : history) {
+            if (message != null) {
+                // 计算消息内容长度
+                if (message.parts() != null && !message.parts().isEmpty()) {
+                    for (JsonObject part : message.parts()) {
+                        if (part != null) {
+                            // 计算文本部分长度
+                            if (part.has("text")) {
+                                com.google.gson.JsonElement textElement = part.get("text");
+                                if (textElement != null && textElement.isJsonPrimitive()) {
+                                    String text = textElement.getAsString();
+                                    if (text != null) {
+                                        totalLength += text.length();
+                                    }
+                                }
+                            }
+                            // 计算函数响应部分长度
+                            if (part.has("functionResponse")) {
+                                com.google.gson.JsonElement functionResponseElement = part.get("functionResponse");
+                                if (functionResponseElement != null && functionResponseElement.isJsonObject()) {
+                                    totalLength += functionResponseElement.toString().length();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return totalLength;
     }
 
     private void agentLog(AgentRuntime runtime, String format, Object... args) {
@@ -6268,9 +6474,6 @@ public class MineClawd {
         }
     }
 
-    private record ToolStatusDescriptor(String shortText, String hoverText) {
-    }
-
     private record PreparedPrompt(String text, List<JsonObject> openAiParts, List<JsonObject> vertexParts) {
     }
 
@@ -6475,4 +6678,7 @@ public class MineClawd {
             boolean clientStreamEnabled
     ) {
     }
+
+
+
 }

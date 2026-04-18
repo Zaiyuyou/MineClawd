@@ -42,6 +42,7 @@ run/
 
 /.agent/
 /.opencode/
+/.claude/
 
 # OS files
 .DS_Store

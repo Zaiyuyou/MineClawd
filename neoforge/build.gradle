@@ -51,7 +51,7 @@ dependencies {
     forgeRuntimeLibrary "net.kyori:examination-string:${rootProject.examination_version}"
     forgeRuntimeLibrary "net.kyori:option:${rootProject.option_version}"
 
-    shadowBundle "de.themoep:minedown-adventure:${rootProject.minedown_version}"
+    // modApi "de.themoep:minedown-adventure:${rootProject.minedown_version}" // MineDown library not available
     shadowBundle "net.kyori:adventure-api:${rootProject.adventure_version}"
     shadowBundle "net.kyori:adventure-key:${rootProject.adventure_version}"
     shadowBundle "net.kyori:adventure-text-serializer-gson:${rootProject.adventure_version}"

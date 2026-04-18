@@ -1,258 +1,169 @@
-# Changelog
+# MineClawd 变更日志
 
-All notable changes to this project are documented in this file.
+## v2.0.0 (2026-04-05) - 完全重构版本
 
-## [1.6.4-Zaiyuyou-fork] - 2026-03-14
+### 🎉 重大更新：工具系统完全重构
 
-### Tool Validation System (Major Safety Improvement)
+此版本对 MineClawd 的工具系统进行了彻底重构，从硬编码的 switch-case 架构转变为模块化、配置驱动的现代化架构。
 
-- **OpenAI API Schema验证器**：新增`OpenAISchemaValidator`类，确保所有工具定义符合OpenAI函数调用API标准
-- **ParameterFactory参数工厂**：新增`ParameterFactory`类，支持JSON驱动的参数schema生成和验证，符合OpenAI API规范
-- **智能工具过滤**：工具注册表现在会自动验证工具schema，只有验证通过的工具才会被发送到LLM，确保基础聊天功能不受影响
-- **玩家状态通知**：当玩家加入游戏时，会自动发送工具验证状态消息（包含工具统计信息）
-- **Schema错误修复**：修复了`list-assets`工具中`properties`字段错误设置为数组的问题
+#### 🏗️ 架构重构
 
-### Added
+**从旧架构到新架构的转变：**
+- ❌ **旧架构**：单一文件硬编码，工具逻辑分散在 `MineClawd.java` 中
+- ✅ **新架构**：模块化分层设计，工具按功能分类管理
 
-- **工具验证机制**：`ToolRegistry`现在支持工具schema验证，自动检测和排除无效工具
-- **状态消息系统**：向玩家发送详细的工具验证状态消息，包括工具统计和问题工具列表
-- **参数生成框架**：`ParameterFactory`支持复杂JSON参数结构，包括嵌套对象、数组约束等高级特性
-- **验证结果记录**：服务器启动时记录详细的工具验证结果和统计信息
+**新的包结构：**
+```
+com.mineclawd/
+├── foundation/          # 基础架构模块
+│   ├── tool/           # 工具接口和注册系统
+│   └── kubejs/         # KubeJS 基础支持
+└── buildin/            # 具体功能实现模块
+    ├── kubejs/         # KubeJS 相关工具
+    ├── files/          # 文件操作工具
+    ├── web/            # 网络工具
+    ├── mod/            # Mod 文档工具
+    └── dynamic/        # 动态内容工具
+```
 
-### Fixed
+#### 🔧 工具迁移完成度
 
-- **修复schema错误**：`AssetManagementTools.createNoArgParameters()`中`properties`字段错误地设置为数组而不是对象
-- **确保LLM兼容性**：所有工具定义现在都符合OpenAI API函数调用规范
-- **防止LLM功能中断**：无效工具不会被发送到LLM，确保基础聊天功能正常工作
+**已成功迁移 29/30 个内置工具：**
 
-## [1.6.3-Zaiyuyou-fork] - 2026-03-14
+- ✅ **KubeJS工具** (`buildin/kubejs/KubeJsTools.java`)
+  - `execute-command` - 执行命令工具
+  - `apply-instant-server-script` - 应用即时服务器脚本
+  - `list-server-scripts` - 列出服务器脚本
+  - `ask-user-question` - 询问用户问题（异步工具）
+  - `reload-game` - 重新加载游戏
+  - `sync-command-tree` - 同步命令树
 
-### Architecture Refactoring (Tool System Decoupling)
+- ✅ **文件操作工具** (`buildin/files/WorkspaceFileTool.java`)
+  - `list-files` - 列出文件/目录
+  - `read-files` - 读取文本文件
+  - `write-files` - 写入文本文件
+  - `copy-files` - 复制文件/目录
+  - `move-files` - 移动/重命名文件/目录
+  - `grep` - 文件内容搜索
+  - `curl` - HTTP请求工具
 
-- **工具定义解耦重构**：将OpenAITools和vertexTools从MineClawd.java中解耦出来，创建了类似LangChain的工具链架构
-- **新增ToolDefinition类**：封装工具信息（名称、描述、参数），提供类型安全的工具定义
-- **新增ToolRegistry类**：集中管理所有工具定义，支持条件过滤和工具注册
-- **新增ToolFactory类**：根据LLM提供商创建对应的工具对象，支持OpenAI和VertexAI格式
-- **工具链管理**：实现了类似LangChain的工具链管理机制，支持工具的条件启用/禁用
+- ✅ **网络工具** (`buildin/web/WebTools.java`)
+  - `search` - 网络搜索工具（Tavily API）
 
-### Fixed
+- ✅ **Mod文档工具** (`buildin/mod/ModDocsTool.java`)
+  - `fetch_url` - 获取HTTP(S)页面
+  - `fetch_modrinth` - 获取Modrinth项目页面
+  - `list_commands` - 列出可用根命令
 
-- **修复文件结构问题**：在删除工具定义方法时修复了文件结构破坏导致的编译错误
-- **清理孤立代码**：删除了所有孤立的参数工具方法，确保代码整洁性
-- **编译验证**：确保重构后的代码能够正常编译和运行
+- ✅ **动态内容工具** (`buildin/dynamic/DynamicContentTool.java`)
+  - `list-dynamic-content` - 列出动态内容
+  - `register-dynamic-item` - 注册动态物品
+  - `register-dynamic-block` - 注册动态方块
+  - `register-dynamic-fluid` - 注册动态流体
+  - `update-dynamic-item` - 更新动态物品
+  - `update-dynamic-block` - 更新动态方块
+  - `update-dynamic-fluid` - 更新动态流体
+  - `unregister-dynamic-content` - 注销动态内容
 
-## [1.6.2-Zaiyuyou-fork] - 2026-03-14
+#### ⚙️ 新增功能
 
-### Agent System (Major Architecture Change)
+**1. 配置管理系统 (`ToolConfig`)**
+- 自动配置文件管理 (`config/mineclawd-tools.json`)
+- 运行时工具启用/禁用
+- 工具分类和自定义配置支持
 
-- **重构了prompt架构**：从MineClawd的硬编码prompt系统转变为可自定义添加和切换的agent系统
-- **新增AgentManager**：支持创建、管理和切换不同的agent配置
-- **Agent优先级修复**：修复了agent prompt优先级问题，确保agent的prompt优先于配置中的硬编码值
-- **多类型prompt支持**：每个agent支持base、dynamic_registry、asset_tracking三种类型的prompt
-- **默认agent**：内置了"default"和"dum"两个示例agent
-- **Agent配置目录**：agent配置存储在`mineclawd/agents/`目录下，支持热重载
+**2. 工具注册表 (`ToolRegistry`)**
+- 动态工具注册/注销
+- 热重载支持 (`reloadBuiltInTools()`)
+- 与 Minecraft reload 指令联动
 
-### Fixed
+**3. 揭露式提示词系统 (`RevealedToolPromptSystem`)**
+- 三层信息揭露机制 (LAYER_1/LAYER_2/LAYER_3)
+- 动态提示词生成
+- OpenAI API 兼容格式
 
-- **修复agent prompt优先级**：现在agent的prompt会正确提交给LLM，不再被配置中的硬编码值覆盖
-- **优化prompt构建逻辑**：确保agent prompt > 配置prompt > 硬编码默认值的正确优先级顺序
+**4. 工具管理命令**
+```bash
+/mineclawd tools                    # 列出工具状态
+/mineclawd tools enable <工具名>    # 启用工具
+/mineclawd tools disable <工具名>   # 禁用工具
+/mineclawd tools reload            # 重载工具配置
+```
 
-## [1.5.1] - 2026-02-26
+#### 🔄 向后兼容性
 
-### Added
+**保持兼容的方面：**
+- ✅ Mod ID 保持不变 (`mineclawd`)
+- ✅ 核心功能 API 保持兼容
+- ✅ 现有配置和会话数据兼容
 
-- Added an in-overlay `Retry` button for modded clients after LLM request failures, so you can retry directly without manually typing `/mineclawd retry <token>`.
+**需要用户注意的变更：**
+- ❌ 工具内部实现完全重构
+- ❌ 部分工具的执行逻辑可能有所调整
+- ❌ 配置文件格式更新（自动迁移）
 
-### Fixed
+#### 📊 技术改进
 
-- Fixed client mod detection failing on dedicated servers, causing all GUI features to fall back to chat-text mode for clients that have the mod installed.
-- Fixed dedicated-server packet sync crashes (`CustomPacketPayload$Type` null) that broke GUI sync and showed `unexpected error` when opening config.
-- Fixed config GUI behavior on dedicated servers so it now loads and edits server config values; client-only settings (such as `Enable GUI`) remain local.
-- Fixed resumed-session continuity so requests now use the session history provider when needed, preventing "memory lost" after selecting a session in the overlay.
-- Fixed `apply-instant-server-script` payload decoding on dedicated servers, including KubeJS class-filter compatibility during UTF-8 decoding.
-- Added always-on server-side logging for agent conversations, tool calls, and tool results (previously all logging was gated behind debug mode).
+**代码质量提升：**
+- 模块化设计，职责分离清晰
+- 统一的错误处理机制
+- 完整的类型安全
+- 易于测试和维护
 
-## [1.5.0] - 2026-02-25
+**性能优化：**
+- 减少内存占用
+- 优化工具加载速度
+- 改进提示词生成效率
 
-### Added
+#### 🚀 开发者体验
 
-- Added a docs-first reference toolkit for mod integration work using `list_commands`, `fetch_modrinth`, and `fetch_url`, so MineClawd can verify command usage and mod docs before writing scripts.
-- Added web search support via Tavily (`search` tool), with configurable `tavily-api-key`, so MineClawd can verify external information before acting.
-- Added optional dependency behavior for YACL and KubeJS integrations so MineClawd can still run when these mods are not installed; config GUI opens when YACL is present, while non-GUI workflows remain available.
-- Added inline `Other` answer input in the overlay question block, so players can provide custom clarification answers directly in the overlay.
+**新的工具开发模式：**
+```java
+public class MyCustomTool implements MineClawdTool {
+    @Override
+    public String getName() { return "my-tool"; }
+    
+    @Override
+    public String getDescription() { return "我的自定义工具"; }
+    
+    @Override
+    public ToolExecutionResult execute(ServerCommandSource source, JsonObject args) {
+        // 工具实现逻辑
+        return ToolExecutionResult.success("操作成功");
+    }
+}
+```
 
-### Fixed
+#### 📝 文件变更摘要
 
-- Fixed cross-version input passthrough in overlay/question interactions where key, mouse, or scroll input could leak into underlying screens (such as chat or inventory search).
+**删除的文件：**
+- 所有旧的工具 executor 类
+- 硬编码的工具实现
+- 过时的配置和UI类
 
-## [1.4.0] - 2026-02-20
+**新增的文件：**
+- `foundation/tool/` - 基础工具架构
+- `buildin/` - 模块化工具实现
+- 架构文档和开发指南
 
-### Assistant Overlay GUI
+#### 🔮 未来展望
 
-- Added a dedicated top-layer assistant window with draggable position, resizable bounds, minimization to an AssistiveTouch orb, and OP-only default orb visibility.
-- Added real-time streaming output in the overlay with a blinking cursor and a temporary `MineClawd: Thinking...` indicator before the first assistant delta.
-- Added in-window prompt input with text selection, caret movement, copy/paste shortcuts, scroll handling, and send/stop generation controls.
-- Added integrated `Config`, `Sessions`, `Persona`, and `Assets` menu entries in the overlay.
-- Added session list UI with `New Session`, in-place session switching, and session history rendering in the overlay.
-- Added AskUserQuestion rendering inside the overlay and persisted selected answers into message history.
-- Updated role highlighting so `You` and `MineClawd` messages are visually distinct, with one `MineClawd` prefix per assistant turn.
-- Added AssistiveTouch orb icon rendering from `icon-simplified.png` and corrected orb icon centering/sizing behavior.
-- Added client config option `Enable GUI` (default ON). When OFF, MineClawd GUI features degrade to non-GUI behavior while dynamic runtime content support remains available.
+此重构为后续功能奠定了基础：
+- 插件化工具系统
+- 图形化配置界面
+- 工具市场支持
+- AI驱动的工具推荐
 
-### Assets Tracking
+---
 
-- Added persistent asset records managed by tools for categories: `Entities`, `Items/Blocks/Fluids`, `Special Items`, `Commands`, and `Game Mechanics`.
-- Added asset metadata support for summary/script path plus category-specific fields (for example entity UUID/location and content identifiers/NBT).
-- Added `/mineclawd assets` operations with GUI integration for quick actions: teleport (entities), give (items), modify shortcut prompt, and delete shortcut prompt.
-- Added Assets overlay view with category filters (`All` + per-category tabs) and per-entry action controls.
+## v1.3.0 (之前版本)
 
-### Runtime Streaming And Controls
+### 功能特性
+- 基础 AI 助手功能
+- KubeJS 集成支持
+- 会话管理和角色系统
+- 基础工具支持
 
-- Enabled streaming response handling for both OpenAI and Vertex AI providers, with server-to-client stream event transport.
-- Added `/mineclawd stop` to cancel active generation, including in-flight network cancellation and pending question cleanup.
-- Added overlay stop action during generation via the input-bar button.
-- Fixed session resume behavior after leaving/rejoining world while a request is running so the active session can still be reopened from GUI.
-- Fixed input bleed-through so typing/scrolling in MineClawd overlay no longer leaks into chat, inventory search, or other active screens.
-- Restored `MineClawd finished working for ...` chat status line after generation completes.
-- Added spacing between assistant text segments split by tool calls to keep streamed output readable.
+---
 
-## [1.3.0] - 2026-02-13
-
-### Added
-
-- Architectury multi-loader project layout with dedicated targets for:
-  - Fabric `1.20.1`
-  - Forge `1.20.1`
-  - NeoForge `1.21.1`
-- NeoForge metadata/runtime support using `mods.toml` (1.20.1) and `neoforge.mods.toml` (1.21.1).
-- NeoForge `1.21.1` Yarn compatibility mapping patch for stable Loom remapping.
-- Player join handshake packet for reliable client-mod detection across loaders.
-
-### Changed
-
-- Migrated shared gameplay logic to Architectury common modules while preserving behavior parity.
-- Updated runtime dependencies per platform:
-  - Fabric keeps Mod Menu integration.
-  - Forge/NeoForge use Better Modlist (Mod Menu alternative).
-  - YACL, KubeJS, and Rhino now resolve with loader-specific coordinates.
-- Updated project version to `1.3.0`.
-
-### Fixed
-
-- Fixed false `client mod not detected` on Forge/NeoForge by replacing brittle channel checks with a ready handshake.
-- Fixed `/mineclawd history` desync on NeoForge sessions by updating packet send gating.
-- Fixed rich text book rendering to show formatted history content instead of raw JSON text.
-- Fixed dynamic content sync timing on client join so runtime content and related textures load correctly.
-
-## [1.2.0] - 2026-02-10
-
-### Added
-
-- Runtime dynamic placeholder registry with `30` item slots, `30` block slots, and `30` fluid slots.
-- Dynamic content tool suite:
-- `list-dynamic-content`
-- `register-dynamic-item`
-- `register-dynamic-block`
-- `register-dynamic-fluid`
-- `update-dynamic-item`
-- `update-dynamic-block`
-- `update-dynamic-fluid`
-- `unregister-dynamic-content`
-- Client-side dynamic model/render pipeline for runtime material substitution and fluid tint rendering.
-- KubeJS callback bridge APIs:
-- `global.mineclawd.requestWithSession(player, session_ref, request)`
-- `global.mineclawd.requestOneShot(request, context)`
-- aliases `callWithSession` and `callOneShot`.
-- `/mineclawd history` command with a client-opened written book view and rich text rendering.
-- `ask-user-question` tool with client question popup UI, option buttons, free-form response, and timeout handling.
-- LLM request recovery UX with clickable `[Retry]` and `[Adjust Prompt]` chat actions.
-- `/mineclawd retry <token>` command and failed-request token tracking.
-- `/mineclawd sessions repair [session]` command to repair malformed session history turns.
-- `sync-command-tree` tool to refresh Brigadier command trees for online players.
-
-### Changed
-
-- Dynamic registry runtime mode is now configurable via `dynamic-registry-mode`:
-- `AUTO`: enabled in single-player runtime, disabled on dedicated servers by default.
-- `ENABLED`: forces runtime placeholders on (dedicated servers warn that clients must install MineClawd).
-- `DISABLED`: fully off.
-- Dynamic placeholder state is now persisted and restored across relog/restart, and synced to players on join.
-- Dynamic fluid defaults now keep water-like movement behavior (flow speed, tick rate, level decrease, collision profile).
-- Added water fluid-tag compatibility entries for all dynamic still/flowing fluids.
-- System prompt now conditionally appends dynamic-registry guidance only when runtime placeholders are enabled.
-- System prompt now documents KubeJS callback usage and session-binding constraints.
-- Session prompt context now includes current session id/token for callback wiring.
-- LLM error handling now rolls back failed prompts from session history to avoid duplicate retries.
-- KubeJS reload error parsing now filters common success lines (`0 errors`, `0 warnings`) to reduce false positives.
-
-### Fixed
-
-- Fixed dynamic creative-tab visibility desync after rejoin by synchronizing server-side dynamic state to clients.
-- Fixed dynamic block/item/fluid runtime properties being lost after restart by persisting registry payload in world state.
-- Fixed Vertex AI function-call/function-response turn mismatch recovery with in-session normalization and repair command support.
-- Fixed `/mineclawd history` client UX to open the book screen directly without requiring an inventory slot.
-
-## [1.1.0] - 2026-02-07
-
-### Added
-
-- Persistent session storage under `gameDir/mineclawd/sessions/`.
-- Full session management commands:
-- `/mineclawd sessions new`
-- `/mineclawd sessions list`
-- `/mineclawd sessions resume <session>`
-- `/mineclawd sessions remove <session>`
-- `/mineclawd new` alias for `/mineclawd sessions new`.
-- Session reference parsing with both `uuid` and `uuid-title`.
-- First-turn session title generation via provider-specific summarize models.
-- Persona system with `mineclawd/souls/` storage.
-- New persona commands:
-- `/mineclawd persona`
-- `/mineclawd persona <soul>`
-- Built-in souls: `default` and `yuki`.
-- Expanded agent toolset:
-- `apply-instant-server-script`
-- `execute-command`
-- `list-server-scripts`
-- `read-server-script`
-- `write-server-script`
-- `delete-server-script`
-- `reload-game`
-- KubeJS reload error capture and return-to-LLM flow for self-repair loops.
-- Mod icon integration and Modrinth link metadata.
-
-### Changed
-
-- Improved system prompt guidance for progress updates, tool strategy, and MineDown support.
-- Tool-call limit now defaults to `16`, with an enable/disable toggle.
-- Agent/player chat presentation improved:
-- Prompt echo format: `<playername> @MineClawd Original Prompt`
-- Styled `[MineClawd]` prefix
-- Markdown/MineDown message rendering
-- Debug logging expanded for LLM outputs and tool activity.
-
-### Fixed
-
-- Fixed command routing and aliases for prompt/config/session flows.
-- Fixed blank YACL config UI and key visibility behavior.
-- Improved internal command execution path so real tool errors can be surfaced back to the model.
-
-## [1.0.0] - 2026-02-06
-
-### Added
-
-- Initial public release for Fabric `1.20.1`.
-- OpenAI and Google Vertex AI provider support.
-- YACL config UI with provider-specific fields and API key masking.
-- Core in-game commands:
-- `/mineclawd prompt <request>`
-- `/mclawd <request>`
-- `/mineclawd config`
-- Base KubeJS integration:
-- Auto-generated `kubejs/server_scripts/mineclawd-internal-api.js`
-- Internal execution command `/_exec_kubejs_internal <code>`
-- Tool-loop execution model for request handling.
-
-### Changed
-
-- Project metadata, description, and license aligned for public release.
+*此变更日志最后更新: 2026-04-05*

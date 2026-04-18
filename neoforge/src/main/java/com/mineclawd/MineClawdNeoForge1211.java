@@ -33,7 +33,7 @@ public final class MineClawdNeoForge1211 {
 
     private static Screen createConfigScreen(Screen parent) {
         try {
-            Class<?> cls = Class.forName("com.mineclawd.config.MineClawdConfigScreen");
+            Class<?> cls = Class.forName("com.mineclawd.foundation.config.MineClawdConfigScreenFactory");
             return (Screen) cls.getMethod("create", Screen.class).invoke(null, parent);
         } catch (ReflectiveOperationException ignored) {
             return parent;

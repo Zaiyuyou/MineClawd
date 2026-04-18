@@ -4,13 +4,13 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.mineclawd.assets.AssetsOverlayPayload;
-import com.mineclawd.client.AgentResponseOverlay;
-import com.mineclawd.config.MineClawdConfig;
-import com.mineclawd.dynamic.DynamicContentRegistry;
-import com.mineclawd.question.QuestionPromptPayload;
-import com.mineclawd.session.SessionAttachment;
-import com.mineclawd.session.SessionOverlayPayload;
+import com.mineclawd.foundation.assets.AssetsOverlayPayload;
+import com.mineclawd.foundation.client.AgentResponseOverlay;
+import com.mineclawd.foundation.config.MineClawdConfig;
+import com.mineclawd.buildin.dynamic.DynamicContentRegistry;
+import com.mineclawd.foundation.question.QuestionPromptPayload;
+import com.mineclawd.foundation.session.SessionAttachment;
+import com.mineclawd.foundation.session.SessionOverlayPayload;
 import dev.architectury.event.EventResult;
 import dev.architectury.event.events.client.ClientGuiEvent;
 import dev.architectury.event.events.client.ClientPlayerEvent;
@@ -259,7 +259,7 @@ public final class MineClawdClientNetworking {
         syncBroadcastTargetFromServer(broadcastTarget);
         syncServerConfigFromServer(serverConfigPayload);
         try {
-            Class<?> cls = Class.forName("com.mineclawd.config.MineClawdConfigScreen");
+            Class<?> cls = Class.forName("com.mineclawd.foundation.config.MineClawdConfigScreenFactory");
             Method create = cls.getMethod("create", Screen.class, String.class);
             Object screen = create.invoke(null, client.currentScreen, broadcastTarget);
             if (screen instanceof Screen s) client.setScreen(s);
@@ -270,7 +270,7 @@ public final class MineClawdClientNetworking {
     private static void syncBroadcastTargetFromServer(String value) {
         if (!HAS_YACL) return;
         try {
-            Class<?> cls = Class.forName("com.mineclawd.config.MineClawdConfigScreen");
+            Class<?> cls = Class.forName("com.mineclawd.foundation.config.MineClawdConfigScreenFactory");
             cls.getMethod("syncBroadcastTargetFromServer", String.class).invoke(null, value);
         } catch (ReflectiveOperationException ignored) {
         }
@@ -279,9 +279,8 @@ public final class MineClawdClientNetworking {
     private static void clearBroadcastTargetServerSync() {
         if (!HAS_YACL) return;
         try {
-            Class<?> cls = Class.forName("com.mineclawd.config.MineClawdConfigScreen");
+            Class<?> cls = Class.forName("com.mineclawd.foundation.config.MineClawdConfigScreenFactory");
             cls.getMethod("clearBroadcastTargetServerSync").invoke(null);
-            cls.getMethod("clearServerConfigSync").invoke(null);
         } catch (ReflectiveOperationException ignored) {
         }
     }
