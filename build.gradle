@@ -1,0 +1,81 @@
+plugins {
+    id "architectury-plugin" version "${architectury_plugin_version}"
+    id "dev.architectury.loom" version "${architectury_loom_version}" apply false
+    id "com.github.johnrengelman.shadow" version "8.1.1" apply false
+}
+
+architectury {
+    minecraft = project.minecraft_version
+}
+
+subprojects {
+    apply plugin: "dev.architectury.loom"
+
+    loom {
+        silentMojangMappingsLicense()
+    }
+}
+
+allprojects {
+    repositories {
+        maven { url 'https://maven.fabricmc.net/' }
+        maven { url 'https://maven.architectury.dev/' }
+        maven { url 'https://maven.neoforged.net/releases/' }
+        maven { url 'https://maven.minecraftforge.net/' }
+        maven { url 'https://maven.isxander.dev/releases' }
+        maven { url 'https://maven.terraformersmc.com/' }
+        maven { url 'https://thedarkcolour.github.io/KotlinForForge/' }
+        maven { url 'https://maven.latvian.dev/releases' }
+        maven { url 'https://jitpack.io' }
+        maven { url 'https://api.modrinth.com/maven' }
+        maven { url 'https://repo.minebench.de/' }
+        maven { url 'https://maven.izzel.io/releases' }
+        maven { url 'https://maven.firstdarkdev.xyz/snapshots' }
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: "java"
+    apply plugin: "architectury-plugin"
+    apply plugin: "maven-publish"
+
+    def javaRelease = Integer.parseInt(project.findProperty("java_version")?.toString() ?: "17")
+
+    base {
+        archivesName = "${rootProject.archives_base_name}-${project.name}-${rootProject.minecraft_version}"
+    }
+
+    version = rootProject.mod_version
+    group = rootProject.maven_group
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = "UTF-8"
+        options.release = javaRelease
+    }
+
+    java {
+        withSourcesJar()
+    }
+
+    tasks.named("jar") {
+        from("${rootProject.rootDir}/LICENSE")
+        from("${rootProject.rootDir}/NOTICE")
+    }
+}
+
+task collectJars(type: Copy) {
+    subprojects.each {
+        if (it.path.contains("fabric") || it.path.contains("neoforge")) {
+            dependsOn it.tasks.named("remapJar")
+            from it.tasks.named("remapJar").get().archiveFile
+        }
+    }
+    into rootProject.layout.buildDirectory.dir("libs")
+}
+
+task copyToMods(type: Copy) {
+    dependsOn collectJars
+    from rootProject.layout.buildDirectory.dir("libs")
+    into project.findProperty("modsFolder") ?: "build/mods"
+}

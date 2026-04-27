@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MineClawd 因果逻辑界面设计</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .mineclawd-window {
+            width: 1200px;
+            height: 800px;
+            background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
+            border-radius: 16px;
+            box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(10px);
+        }
+
+        /* 顶部会话栏 */
+        .session-bar {
+            height: 60px;
+            background: linear-gradient(90deg, #252525, #1f1f1f);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+
+        .session-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .session-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .session-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .session-badge {
+            background: rgba(102, 126, 234, 0.2);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .session-controls {
+            display: flex;
+            gap: 12px;
+        }
+
+        .session-btn {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .session-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .session-btn.primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            font-weight: 600;
+        }
+
+        /* 主内容区域 */
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* 左侧对话区域 */
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .messages-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .message {
+            margin-bottom: 16px;
+            padding: 16px;
+            border-radius: 12px;
+            max-width: 85%;
+            position: relative;
+        }
+
+        .message.user {
+            background: rgba(102, 126, 234, 0.15);
+            border-left: 4px solid #667eea;
+            margin-left: auto;
+        }
+
+        .message.assistant {
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 4px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .message.tool-execution {
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 4px solid #FFC107;
+        }
+
+        .message.asset-operation {
+            background: rgba(76, 175, 80, 0.1);
+            border-left: 4px solid #4CAF50;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .message-content {
+            color: rgba(255, 255, 255, 0.9);
+            line-height: 1.5;
+            font-size: 14px;
+        }
+
+        .message-actions {
+            margin-top: 8px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .input-container {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-field {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: white;
+            font-size: 14px;
+            resize: none;
+            min-height: 44px;
+            max-height: 120px;
+        }
+
+        .input-field:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .send-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 8px;
+            padding: 12px 24px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            height: 44px;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        /* 右侧功能面板 */
+        .function-panel {
+            width: 350px;
+            display: flex;
+            flex-direction: column;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .panel-tabs {
+            display: flex;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .panel-tab {
+            flex: 1;
+            padding: 12px 16px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .panel-tab.active {
+            color: #fff;
+            border-bottom-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0;
+        }
+
+        /* 工具面板 */
+        .tools-section {
+            padding: 16px;
+        }
+
+        .tool-group {
+            margin-bottom: 20px;
+        }
+
+        .group-title {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tool-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .tool-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .tool-card:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .tool-icon {
+            font-size: 16px;
+            margin-bottom: 6px;
+        }
+
+        .tool-name {
+            color: #fff;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .tool-desc {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 10px;
+            line-height: 1.3;
+        }
+
+        /* 资产管理面板 */
+        .assets-section {
+            padding: 16px;
+        }
+
+        .asset-filters {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .filter-btn {
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .filter-btn.active {
+            background: rgba(102, 126, 234, 0.2);
+            color: #fff;
+        }
+
+        .asset-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .asset-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .asset-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .asset-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .asset-icon {
+            font-size: 14px;
+        }
+
+        .asset-name {
+            color: #fff;
+            font-size: 12px;
+            font-weight: 500;
+            flex: 1;
+        }
+
+        .asset-meta {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 10px;
+        }
+
+        .asset-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .asset-action {
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 10px;
+            cursor: pointer;
+        }
+
+        /* 会话管理面板 */
+        .sessions-section {
+            padding: 16px;
+        }
+
+        .session-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .session-item.active {
+            background: rgba(102, 126, 234, 0.1);
+            border-color: #667eea;
+        }
+
+        .session-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .session-title-small {
+            color: #fff;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .session-time {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 10px;
+        }
+
+        /* 底部状态栏 */
+        .status-bar {
+            height: 40px;
+            background: rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .status-items {
+            display: flex;
+            gap: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #4CAF50;
+        }
+
+        .status-dot.thinking {
+            background: #FFC107;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 1400px) {
+            .mineclawd-window {
+                width: 95%;
+                height: 90vh;
+            }
+            
+            .function-panel {
+                width: 300px;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                flex-direction: column;
+            }
+            
+            .function-panel {
+                width: 100%;
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="mineclawd-window">
+        <!-- 顶部会话栏 -->
+        <div class="session-bar">
+            <div class="session-info">
+                <div class="session-title">MineClawd 智能助手</div>
+                <div class="session-meta">
+                    <span>会话: <span class="session-badge" id="currentSession">新建会话</span></span>
+                    <span>代理: <span id="currentAgent">默认代理</span></span>
+                    <span>工具: <span id="toolCount">29</span> 个可用</span>
+                </div>
+            </div>
+            <div class="session-controls">
+                <button class="session-btn" onclick="showSessions()">📚 会话列表</button>
+                <button class="session-btn" onclick="showSettings()">⚙️ 设置</button>
+                <button class="session-btn primary" onclick="newSession()">💬 新建会话</button>
+            </div>
+        </div>
+
+        <!-- 主内容区域 -->
+        <div class="main-content">
+            <!-- 左侧对话区域 -->
+            <div class="chat-section">
+                <div class="messages-area" id="messagesArea">
+                    <div class="message assistant">
+                        <div class="message-header">
+                            <span>🤖 MineClawd助手</span>
+                            <span>刚刚</span>
+                        </div>
+                        <div class="message-content">
+                            欢迎使用 MineClawd！我可以帮助您：
+                            <ul style="margin: 8px 0 8px 20px;">
+                                <li>执行KubeJS脚本和命令</li>
+                                <li>管理文件和资源</li>
+                                <li>搜索Mod文档和网络信息</li>
+                                <li>优化游戏设置和性能</li>
+                            </ul>
+                            请告诉我您需要什么帮助？
+                        </div>
+                    </div>
+                    
+                    <!-- 示例：工具执行消息 -->
+                    <div class="message tool-execution">
+                        <div class="message-header">
+                            <span>🔧 工具执行</span>
+                            <span>2分钟前</span>
+                        </div>
+                        <div class="message-content">
+                            已执行命令: <strong>/give @p minecraft:diamond 64</strong>
+                        </div>
+                        <div class="message-actions">
+                            <button class="action-btn">📋 复制命令</button>
+                            <button class="action-btn">🔄 重新执行</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 示例：资源操作消息 -->
+                    <div class="message asset-operation">
+                        <div class="message-header">
+                            <span>📦 资源操作</span>
+                            <span>5分钟前</span>
+                        </div>
+                        <div class="message-content">
+                            已上传资源: <strong>building_blueprint.json</strong>
+                        </div>
+                        <div class="message-actions">
+                            <button class="action-btn">👁️ 预览</button>
+                            <button class="action-btn">📥 下载</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="input-area">
+                    <div class="input-container">
+                        <textarea class="input-field" placeholder="输入您的问题或指令..." id="messageInput"></textarea>
+                        <button class="send-btn" onclick="sendMessage()">发送</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧功能面板 -->
+            <div class="function-panel">
+                <div class="panel-tabs">
+                    <div class="panel-tab active" onclick="switchPanel('tools')">🔧 工具库</div>
+                    <div class="panel-tab" onclick="switchPanel('assets')">📦 资源管理</div>
+                    <div class="panel-tab" onclick="switchPanel('sessions')">📚 会话管理</div>
+                </div>
+                
+                <div class="panel-content">
+                    <!-- 工具库面板 -->
+                    <div id="toolsPanel" class="tools-section">
+                        <div class="tool-group">
+                            <div class="group-title">KubeJS工具</div>
+                            <div class="tool-grid">
+                                <div class="tool-card" onclick="useTool('execute-command')">
+                                    <div class="tool-icon">⚡</div>
+                                    <div class="tool-name">执行命令</div>
+                                    <div class="tool-desc">执行Minecraft命令</div>
+                                </div>
+                                <div class="tool-card" onclick="useTool('apply-script')">
+                                    <div class="tool-icon">📜</div>
+                                    <div class="tool-name">应用脚本</div>
+                                    <div class="tool-desc">应用服务器脚本</div>
+                                </div>
+                                <div class="tool-card" onclick="useTool('reload-game')">
+                                    <div class="tool-icon">🔄</div>
+                                    <div class="tool-name">重载游戏</div>
+                                    <div class="tool-desc">重载游戏数据</div>
+                                </div>
+                                <div class="tool-card" onclick="useTool('ask-question')">
+                                    <div class="tool-icon">❓</div>
+                                    <div class="tool-name">询问用户</div>
+                                    <div class="tool-desc">异步用户交互</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="tool-group">
+                            <div class="group-title">文件操作</div>
+                            <div class="tool-grid">
+                                <div class="tool-card" onclick="useTool('list-files')">
+                                    <div class="tool-icon">📁</div>
+                                    <div class="tool-name">文件列表</div>
+                                    <div class="tool-desc">查看工作目录</div>
+                                </div>
+                                <div class="tool-card" onclick="useTool('read-file')">
+                                    <div class="tool-icon">📄</div>
+                                    <div class="tool-name">读取文件</div>
+                                    <div class="tool-desc">读取文本内容</div>
+                                </div>
+                                <div class="tool-card" onclick="useTool('write-file')">
+                                    <div class="tool-icon">✏️</div>
+                                    <div class="tool-name">写入文件</div>
+                                    <div class="tool-desc">保存文件内容</div>
+                                </div>
+                                <div class="tool-card" onclick="useTool('search-files')">
+                                    <div class="tool-icon">🔍</div>
+                                    <div class="tool-name">文件搜索</div>
+                                    <div class="tool-desc">搜索文件内容</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="tool-group">
+                            <div class="group-title">网络工具</div>
+                            <div class="tool-grid">
+                                <div class="tool-card" onclick="useTool('web-search')">
+                                    <div class="tool-icon">🌐</div>
+                                    <div class="tool-name">网络搜索</div>
+                                    <div class="tool-desc">Tavily API搜索</div>
+                                </div>
+                                <div class="tool-card" onclick="useTool('fetch-url')">
+                                    <div class="tool-icon">📡</div>
+                                    <div class="tool-name">获取网页</div>
+                                    <div class="tool-desc">HTTP页面内容</div>
+                                </div>
+                                <div class="tool-card" onclick="useTool('modrinth')">
+                                    <div class="tool-icon">📦</div>
+                                    <div class="tool-name">Modrinth</div>
+                                    <div class="tool-desc">Mod项目搜索</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 资源管理面板 -->
+                    <div id="assetsPanel" class="assets-section" style="display: none;">
+                        <div class="asset-filters">
+                            <button class="filter-btn active">全部</button>
+                            <button class="filter-btn">图片</button>
+                            <button class="filter-btn">文档</button>
+                            <button class="filter-btn">脚本</button>
+                            <button class="filter-btn">配置</button>
+                        </div>
+                        
+                        <div class="asset-list">
+                            <div class="asset-item">
+                                <div class="asset-header">
+                                    <span class="asset-icon">📄</span>
+                                    <span class="asset-name">building_blueprint.json</span>
+                                    <span class="asset-meta">2.3 KB</span>
+                                </div>
+                                <div class="asset-actions">
+                                    <button class="asset-action">👁️ 预览</button>
+                                    <button class="asset-action">📥 下载</button>
+                                    <button class="asset-action">🗑️ 删除</button>
+                                </div>
+                            </div>
+                            
+                            <div class="asset-item">
+                                <div class="asset-header">
+                                    <span class="asset-icon">🖼️</span>
+                                    <span class="asset-name">redstone_design.png</span>
+                                    <span class="asset-meta">1.5 MB</span>
+                                </div>
+                                <div class="asset-actions">
+                                    <button class="asset-action">👁️ 预览</button>
+                                    <button class="asset-action">📥 下载</button>
+                                    <button class="asset-action">🗑️ 删除</button>
+                                </div>
+                            </div>
+                            
+                            <div class="asset-item">
+                                <div class="asset-header">
+                                    <span class="asset-icon">📜</span>
+                                    <span class="asset-name">auto_farm.js</span>
+                                    <span class="asset-meta">15.6 KB</span>
+                                </div>
+                                <div class="asset-actions">
+                                    <button class="asset-action">👁️ 预览</button>
+                                    <button class="asset-action">📥 下载</button>
+                                    <button class="asset-action">▶️ 执行</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 会话管理面板 -->
+                    <div id="sessionsPanel" class="sessions-section" style="display: none;">
+                        <div class="session-item active">
+                            <div class="session-title-small">建筑规划会话</div>
+                            <div class="session-time">今天 14:30</div>
+                        </div>
+                        
+                        <div class="session-item">
+                            <div class="session-title-small">红石设计会话</div>
+                            <div class="session-time">昨天 10:15</div>
+                        </div>
+                        
+                        <div class="session-item">
+                            <div class="session-title-small">Mod配置会话</div>
+                            <div class="session-time">3天前</div>
+                        </div>
+                        
+                        <div class="session-item">
+                            <div class="session-title-small">性能优化会话</div>
+                            <div class="session-time">1周前</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部状态栏 -->
+        <div class="status-bar">
+            <div class="status-items">
+                <div class="status-item">
+                    <div class="status-dot"></div>
+                    <span>已连接</span>
+                </div>
+                <div class="status-item">
+                    <span>会话: 4 个</span>
+                </div>
+                <div class="status-item">
+                    <span>资源: 12 个文件</span>
+                </div>
+            </div>
+            <div class="status-items">
+                <div class="status-item">
+                    <span>MineClawd v1.0.0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 面板切换功能
+        function switchPanel(panelName) {
+            // 更新标签激活状态
+            document.querySelectorAll('.panel-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.currentTarget.classList.add('active');
+            
+            // 显示对应面板
+            document.getElementById('toolsPanel').style.display = 'none';
+            document.getElementById('assetsPanel').style.display = 'none';
+            document.getElementById('sessionsPanel').style.display = 'none';
+            
+            document.getElementById(panelName + 'Panel').style.display = 'block';
+        }
+
+        // 发送消息功能
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message) return;
+            
+            const messagesArea = document.getElementById('messagesArea');
+            
+            // 添加用户消息
+            const userMessage = document.createElement('div');
+            userMessage.className = 'message user';
+            userMessage.innerHTML = `
+                <div class="message-header">
+                    <span>👤 您</span>
+                    <span>刚刚</span>
+                </div>
+                <div class="message-content">${message}</div>
+            `;
+            messagesArea.appendChild(userMessage);
+            
+            // 清空输入框
+            input.value = '';
+            
+            // 模拟AI回复
+            setTimeout(() => {
+                const aiMessage = document.createElement('div');
+                aiMessage.className = 'message assistant';
+                aiMessage.innerHTML = `
+                    <div class="message-header">
+                        <span>🤖 MineClawd助手</span>
+                        <span>刚刚</span>
+                    </div>
+                    <div class="message-content">
+                        我已经收到您的消息："${message}"。让我为您分析并执行相关操作...
+                    </div>
+                `;
+                messagesArea.appendChild(aiMessage);
+                messagesArea.scrollTop = messagesArea.scrollHeight;
+            }, 1000);
+            
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+
+        // 工具使用功能
+        function useTool(toolName) {
+            const messagesArea = document.getElementById('messagesArea');
+            const toolMessage = document.createElement('div');
+            toolMessage.className = 'message tool-execution';
+            toolMessage.innerHTML = `
+                <div class="message-header">
+                    <span>🔧 工具执行</span>
+                    <span>刚刚</span>
+                </div>
+                <div class="message-content">
+                    正在执行工具: <strong>${toolName}</strong>...
+                </div>
+                <div class="message-actions">
+                    <button class="action-btn">📋 复制命令</button>
+                    <button class="action-btn">🔄 重新执行</button>
+                </div>
+            `;
+            messagesArea.appendChild(toolMessage);
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+
+        // 新建会话
+        function newSession() {
+            document.getElementById('currentSession').textContent = '会话_' + Date.now().toString().slice(-4);
+            document.getElementById('messagesArea').innerHTML = `
+                <div class="message assistant">
+                    <div class="message-header">
+                        <span>🤖 MineClawd助手</span>
+                        <span>刚刚</span>
+                    </div>
+                    <div class="message-content">
+                        新的对话会话已创建！我可以帮助您处理各种Minecraft相关任务。
+                    </div>
+                </div>
+            `;
+        }
+
+        // 初始化页面
+        document.addEventListener('DOMContentLoaded', function() {
+            // 设置输入框回车发送
+            document.getElementById('messageInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

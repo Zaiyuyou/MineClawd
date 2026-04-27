@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MineClawd HUD Demo</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#0d0d0f;min-height:100vh;display:flex;justify-content:center;align-items:center;overflow:hidden;user-select:none}
+.game-scene{position:fixed;inset:0;background:radial-gradient(ellipse at 30% 50%,rgba(60,80,120,.15) 0%,transparent 60%),radial-gradient(ellipse at 70% 30%,rgba(80,60,120,.1) 0%,transparent 50%),linear-gradient(180deg,#0d0d12 0%,#14141a 50%,#0a0a0e 100%);z-index:0}
+.game-scene::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(255,255,255,.008) 2px,rgba(255,255,255,.008) 4px),repeating-linear-gradient(90deg,transparent,transparent 2px,rgba(255,255,255,.008) 2px,rgba(255,255,255,.008) 4px)}
+.game-scene .crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:24px;height:24px}
+.game-scene .crosshair::before,.game-scene .crosshair::after{content:'';position:absolute;background:rgba(255,255,255,.15)}
+.game-scene .crosshair::before{width:2px;height:100%;left:50%;transform:translateX(-50%)}
+.game-scene .crosshair::after{height:2px;width:100%;top:50%;transform:translateY(-50%)}
+.minimap{position:fixed;bottom:28px;right:28px;width:120px;height:120px;border-radius:12px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.08);z-index:1}
+.minimap::after{content:'▲';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:rgba(255,255,255,.2);font-size:10px}
+.hotbar{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);display:flex;gap:2px;z-index:1}
+.hotbar span{width:40px;height:40px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.1);border-radius:4px}
+.f7-hint{position:fixed;bottom:160px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.12);font-size:13px;z-index:1;text-align:center;letter-spacing:.5px;pointer-events:none}
+.f7-hint kbd{display:inline-block;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:4px;padding:2px 8px;font-family:inherit;font-size:11px}
+
+/* ===== ORB ===== */
+.orb{position:fixed;z-index:99;width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#6385f4,#4a6dc9);box-shadow:0 4px 20px rgba(99,133,244,.4),0 0 0 1px rgba(255,255,255,.1);cursor:grab;display:none;align-items:center;justify-content:center;font-size:18px;color:#fff;transition:left .25s ease,top .25s ease,box-shadow .2s;bottom:80px;right:32px}
+.orb:hover{box-shadow:0 6px 28px rgba(99,133,244,.55)}
+.orb:active{cursor:grabbing;transform:scale(.92)}
+.orb.show{display:flex}
+
+/* ===== HUD WINDOW ===== */
+.hud-window{position:fixed;width:min(90vw,1060px);height:min(82vh,720px);background:rgba(22,24,28,.94);border-radius:12px;box-shadow:0 24px 64px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.07);display:none;flex-direction:column;z-index:100;backdrop-filter:blur(20px);left:50%;top:50%;transform:translate(-50%,-50%);transition:opacity .25s,transform .25s,width .3s,height .3s,left .3s,top .3s}
+.hud-window.open{display:flex;opacity:1;transform:translate(-50%,-50%) scale(1)}
+.hud-window.open.maximized{width:100vw!important;height:100vh!important;left:0!important;top:0!important;border-radius:0;transform:none!important}
+.resize-handle{position:absolute;z-index:200}.resize-handle.n{top:-4px;left:20px;right:20px;height:8px;cursor:n-resize}
+.resize-handle.s{bottom:-4px;left:20px;right:20px;height:8px;cursor:s-resize}.resize-handle.w{left:-4px;top:20px;bottom:20px;width:8px;cursor:w-resize}
+.resize-handle.e{right:-4px;top:20px;bottom:20px;width:8px;cursor:e-resize}.resize-handle.nw{top:-4px;left:-4px;width:20px;height:20px;cursor:nw-resize}
+.resize-handle.ne{top:-4px;right:-4px;width:20px;height:20px;cursor:ne-resize}.resize-handle.sw{bottom:-4px;left:-4px;width:20px;height:20px;cursor:sw-resize}
+.resize-handle.se{bottom:-4px;right:-4px;width:20px;height:20px;cursor:se-resize}
+
+/* ===== TITLE BAR ===== */
+.title-bar{display:flex;align-items:center;height:48px;padding:0 12px;border-bottom:1px solid rgba(255,255,255,.06);cursor:grab;flex-shrink:0;gap:12px}
+.title-bar:active{cursor:grabbing}
+.title-bar .logo{display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.85);font-size:14px;font-weight:600;letter-spacing:.3px;flex-shrink:0}
+.title-bar .logo svg{width:18px;height:18px}
+.agent-card{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:4px 12px 4px 10px;cursor:pointer;transition:background .15s;flex-shrink:0}
+.agent-card:hover{background:rgba(255,255,255,.07)}
+.agent-card .icon{width:30px;height:30px;border-radius:6px;background:linear-gradient(135deg,rgba(99,133,244,.2),rgba(118,75,162,.2));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.agent-card .info{display:flex;flex-direction:column;line-height:1.3}
+.agent-card .info .name{color:rgba(255,255,255,.8);font-size:12px;font-weight:500}
+.agent-card .info .persona{color:rgba(255,255,255,.35);font-size:10px}
+
+.title-bar .spacer{flex:1;min-width:0}
+.title-bar .win-controls{display:flex;gap:4px;flex-shrink:0}
+.title-bar .win-controls button{width:28px;height:28px;border:none;background:transparent;color:rgba(255,255,255,.35);border-radius:6px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .12s}
+.title-bar .win-controls button:hover{background:rgba(255,255,255,.07);color:rgba(255,255,255,.6)}
+.title-bar .win-controls button.maxbtn:hover{background:rgba(99,133,244,.2);color:#6385f4}
+
+/* ===== BODY ===== */
+.body{flex:1;display:flex;overflow:hidden;min-height:0}
+
+/* ===== NAV ===== */
+.nav{width:44px;display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:2px;border-right:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.12);flex-shrink:0}
+.nav-item{width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .12s;color:rgba(255,255,255,.3);font-size:15px;position:relative}
+.nav-item:hover{background:rgba(255,255,255,.05);color:rgba(255,255,255,.55)}
+.nav-item.active{background:rgba(99,133,244,.12);color:#6385f4}
+.nav-item.active::before{content:'';position:absolute;left:-1px;top:50%;transform:translateY(-50%);width:2px;height:14px;background:#6385f4;border-radius:0 2px 2px 0}
+.nav-item .tip{position:absolute;left:40px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.92);color:rgba(255,255,255,.85);padding:4px 10px;border-radius:4px;font-size:11px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;z-index:300}
+.nav-item:hover .tip{opacity:1}
+
+/* ===== SIDEBAR ===== */
+.sidebar{width:260px;overflow:hidden;background:rgba(0,0,0,.08);border-right:1px solid rgba(255,255,255,.06);transition:width .2s,opacity .15s;flex-shrink:0;display:flex;flex-direction:column;position:relative}
+.sidebar.collapsed{width:0!important;opacity:0}
+.sidebar-resizer{position:absolute;right:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:50}
+.sidebar-resizer::after{content:'';position:absolute;left:2px;top:0;bottom:0;width:2px;background:rgba(255,255,255,.04);border-radius:1px;transition:background .15s}
+.sidebar-resizer:hover::after{background:rgba(99,133,244,.3)}
+.sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;border-bottom:1px solid rgba(255,255,255,.05);min-height:38px}
+.sidebar-header h3{color:rgba(255,255,255,.5);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.sidebar-header .sb-actions{display:flex;gap:4px}
+.sidebar-header .sb-actions button{background:none;border:none;color:rgba(255,255,255,.25);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:4px;transition:all .12s}
+.sidebar-header .sb-actions button:hover{background:rgba(255,255,255,.06);color:rgba(255,255,255,.5)}
+.sidebar-body{flex:1;overflow-y:auto;padding:6px 8px}
+.sb-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .1s;margin-bottom:1px}
+.sb-item:hover{background:rgba(255,255,255,.04)}
+.sb-item.active{background:rgba(99,133,244,.1)}
+.sb-item .ico{width:26px;height:26px;border-radius:5px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.4);font-size:12px;flex-shrink:0}
+.sb-item .info{flex:1;min-width:0}
+.sb-item .info .ln{color:rgba(255,255,255,.7);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-item .info .sub{color:rgba(255,255,255,.28);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.sb-item .meta{color:rgba(255,255,255,0.2);font-size:10px;flex-shrink:0}
+.sidebar-select{width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:5px;color:rgba(255,255,255,.6);padding:6px 8px;font-size:11px;cursor:pointer;margin-bottom:6px;outline:none}
+.sidebar-select:focus{border-color:rgba(99,133,244,.3)}
+
+/* file tree */
+.filetree{padding:2px 0}
+.filetree .dir{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:4px;cursor:pointer;color:rgba(255,255,255,.55);font-size:11px;transition:all .1s}
+.filetree .dir:hover{background:rgba(255,255,255,.04);color:rgba(255,255,255,.7)}
+.filetree .dir .arrow{font-size:8px;transition:transform .15s;width:10px;text-align:center}
+.filetree .dir .arrow.open{transform:rotate(90deg)}
+.filetree .dir .ico{font-size:13px;width:16px;text-align:center}
+.filetree .children{padding-left:18px;overflow:hidden;max-height:0;transition:max-height .2s}
+.filetree .children.open{max-height:500px}
+.filetree .file{display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:4px;cursor:pointer;color:rgba(255,255,255,.45);font-size:11px;transition:all .1s}
+.filetree .file:hover{background:rgba(255,255,255,.04);color:rgba(255,255,255,.65)}
+.filetree .file.active{background:rgba(99,133,244,.1);color:#6385f4}
+.filetree .file .ico{font-size:12px;width:16px;text-align:center}
+
+/* ===== MAIN CONTENT ===== */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+
+/* ===== CHAT ===== */
+.chat-area{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:88%;display:flex;gap:9px;animation:msgIn .2s ease-out}
+@keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.msg.assistant{align-self:flex-start}
+.msg.user{align-self:flex-end;flex-direction:row-reverse}
+.msg .icon{width:28px;height:28px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.msg.assistant .icon{background:rgba(99,133,244,.12);color:#6385f4}
+.msg.user .icon{background:rgba(255,255,255,.05);color:rgba(255,255,255,.4)}
+.msg .bubble{background:rgba(255,255,255,.04);border-radius:8px;padding:9px 13px;color:rgba(255,255,255,.75);font-size:12.5px;line-height:1.55}
+.msg.user .bubble{background:rgba(99,133,244,.1)}
+.msg .bubble .ts{color:rgba(255,255,255,.2);font-size:10px;margin-top:4px;display:block}
+.msg .bubble .tool-call{margin-top:6px;background:rgba(0,0,0,.15);border-radius:5px;padding:6px 9px;font-size:11px;color:rgba(255,255,255,.45)}
+.msg .bubble .tool-call .ok{color:#4ade80}
+.msg .bubble :is(h1,h2,h3){color:#fff;margin:6px 0 3px}
+.msg .bubble h1{font-size:15px}.msg .bubble h2{font-size:13.5px}.msg .bubble h3{font-size:12.5px}
+.msg .bubble code{background:rgba(0,0,0,.25);padding:1px 4px;border-radius:3px;font-size:11.5px;font-family:'JetBrains Mono','Cascadia Code',monospace;color:#e6b450}
+.msg .bubble pre{background:rgba(0,0,0,.25);border-radius:5px;padding:8px;margin:5px 0;overflow-x:auto}
+.msg .bubble pre code{background:none;padding:0;color:#c9d1d9}
+.msg .bubble ul,.msg .bubble ol{padding-left:16px;margin:3px 0}
+.msg .bubble blockquote{border-left:2px solid #6385f4;padding-left:8px;color:rgba(255,255,255,.45);margin:5px 0}
+
+.typing{align-self:flex-start;display:flex;gap:9px;animation:msgIn .2s ease-out}
+.typing .icon{width:28px;height:28px;border-radius:5px;background:rgba(99,133,244,.12);color:#6385f4;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.typing .dots{background:rgba(255,255,255,.04);border-radius:8px;padding:10px 16px;display:flex;gap:4px;align-items:center}
+.typing .dots span{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.25);animation:bounce 1.2s infinite}
+.typing .dots span:nth-child(2){animation-delay:.2s}
+.typing .dots span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px);background:rgba(255,255,255,.45)}}
+
+.input-bar{display:flex;align-items:center;gap:8px;padding:9px 14px;border-top:1px solid rgba(255,255,255,.06);flex-shrink:0}
+.input-bar input{flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:7px;padding:8px 12px;color:rgba(255,255,255,.75);font-size:12.5px;outline:none;transition:border-color .12s}
+.input-bar input:focus{border-color:rgba(99,133,244,.35)}
+.input-bar input::placeholder{color:rgba(255,255,255,.18)}
+.input-bar button{padding:8px 16px;border:none;border-radius:7px;background:#6385f4;color:#fff;font-size:12.5px;font-weight:500;cursor:pointer;transition:all .12s;white-space:nowrap}
+.input-bar button:hover{background:#5374e0}
+.input-bar button:active{transform:scale(.97)}
+.input-bar button:disabled{background:rgba(255,255,255,.06);color:rgba(255,255,255,.18);cursor:default}
+
+/* ===== TOOLS ===== */
+.tools-page,.assets-page{padding:14px 16px;overflow-y:auto;flex:1}
+.tools-page .header,.assets-page .header{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.tools-page .header h2,.assets-page .header h2{color:rgba(255,255,255,.75);font-size:14px;font-weight:600}
+.tools-page .header input{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:5px;padding:5px 9px;color:rgba(255,255,255,.5);font-size:11px;outline:none;max-width:180px}
+.tools-page .category{margin-bottom:14px}
+.tools-page .category h4{color:rgba(255,255,255,.35);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px;padding:0 2px}
+.tool-row{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:5px;transition:background .1s;cursor:pointer}
+.tool-row:hover{background:rgba(255,255,255,.03)}
+.tool-row .tog{width:30px;height:16px;border-radius:9px;background:rgba(255,255,255,.08);position:relative;cursor:pointer;transition:background .12s;flex-shrink:0}
+.tool-row .tog.on{background:#6385f4}
+.tool-row .tog::after{content:'';position:absolute;width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.7);top:2px;left:2px;transition:transform .12s}
+.tool-row .tog.on::after{transform:translateX(14px)}
+.tool-row .name{flex:1;color:rgba(255,255,255,.65);font-size:11.5px;font-family:'JetBrains Mono',monospace}
+.tool-row .desc{color:rgba(255,255,255,.25);font-size:10.5px;flex:2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool-row .layer{font-size:9px;padding:2px 5px;border-radius:3px;background:rgba(255,255,255,.04);color:rgba(255,255,255,.25)}
+
+/* ===== ASSETS ===== */
+.assets-page .header .filter{display:flex;gap:3px}
+.assets-page .header .filter span{padding:3px 9px;border-radius:4px;font-size:10.5px;cursor:pointer;color:rgba(255,255,255,.3);transition:all .1s}
+.assets-page .header .filter span:hover{color:rgba(255,255,255,.5);background:rgba(255,255,255,.03)}
+.assets-page .header .filter span.active{color:#6385f4;background:rgba(99,133,244,.08)}
+.asset-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:5px;transition:background .1s}
+.asset-row:hover{background:rgba(255,255,255,.03)}
+.asset-row .ico{width:20px;text-align:center;font-size:14px}
+.asset-row .id{flex:1;color:rgba(255,255,255,.6);font-size:11.5px;font-family:'JetBrains Mono',monospace}
+.asset-row .cnt{color:rgba(255,255,255,.28);font-size:11px}
+.asset-row .acts{display:flex;gap:3px;opacity:0;transition:opacity .12s}
+.asset-row:hover .acts{opacity:1}
+.asset-row .acts button{padding:2px 7px;border:none;border-radius:3px;font-size:10px;cursor:pointer;transition:background .1s}
+.asset-row .acts .tp{background:rgba(99,133,244,.12);color:#6385f4}
+.asset-row .acts .tp:hover{background:rgba(99,133,244,.2)}
+.asset-row .acts .give{background:rgba(74,222,128,.1);color:#4ade80}
+.asset-row .acts .give:hover{background:rgba(74,222,128,.18)}
+
+/* ===== TEXT EDITOR ===== */
+.editor-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.editor-tabs{display:flex;align-items:center;background:rgba(0,0,0,.1);border-bottom:1px solid rgba(255,255,255,.05);flex-shrink:0;overflow-x:auto;min-height:34px}
+.editor-tabs::-webkit-scrollbar{height:2px}
+.editor-tabs::-webkit-scrollbar-thumb{background:rgba(255,255,255,.05);border-radius:1px}
+.editor-tab{display:flex;align-items:center;gap:6px;padding:7px 12px;font-size:11px;color:rgba(255,255,255,.35);cursor:pointer;border-right:1px solid rgba(255,255,255,.04);white-space:nowrap;transition:all .1s;min-width:0}
+.editor-tab:hover{color:rgba(255,255,255,.55)}
+.editor-tab.active{color:rgba(255,255,255,.7);background:rgba(255,255,255,.03);border-bottom:2px solid #6385f4;margin-bottom:-1px}
+.editor-tab .close{font-size:10px;color:rgba(255,255,255,.15);padding:2px;border-radius:3px;transition:all .1s;cursor:pointer}
+.editor-tab .close:hover{background:rgba(239,68,68,.2);color:#ef4444}
+.editor-tab .ico{font-size:12px}
+.editor-body{flex:1;overflow:hidden;display:flex}
+.editor-body textarea{width:100%;height:100%;border:none;background:rgba(0,0,0,.15);color:rgba(255,255,255,.7);font-size:12.5px;font-family:'JetBrains Mono','Cascadia Code',monospace;padding:14px 16px;outline:none;resize:none;line-height:1.6;tab-size:2}
+.editor-body textarea::placeholder{color:rgba(255,255,255,.12)}
+
+/* ===== SETTINGS ===== */
+.settings-page{padding:14px 16px;overflow-y:auto;flex:1}
+.settings-page h2{color:rgba(255,255,255,.75);font-size:14px;font-weight:600;margin-bottom:14px}
+.settings-page .group{margin-bottom:18px}
+.settings-page .group h5{color:rgba(255,255,255,.3);font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px}
+.settings-row{display:flex;align-items:center;padding:7px 9px;border-radius:5px}
+.settings-row .label{flex:1;color:rgba(255,255,255,.5);font-size:11.5px}
+.settings-row input[type="text"],.settings-row input[type="password"]{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:4px;padding:4px 7px;color:rgba(255,255,255,.5);font-size:11px;outline:none;width:180px}
+.settings-row input[type="text"]:focus{border-color:rgba(99,133,244,.25)}
+.settings-row select{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:4px;padding:4px 7px;color:rgba(255,255,255,.5);font-size:11px;cursor:pointer}
+.setting-tabs{display:flex;border-bottom:1px solid rgba(255,255,255,.05);margin-bottom:14px}
+.setting-tab{padding:7px 14px;font-size:11.5px;color:rgba(255,255,255,.3);cursor:pointer;border-bottom:2px solid transparent;transition:all .1s}
+.setting-tab:hover{color:rgba(255,255,255,.5)}
+.setting-tab.active{color:#6385f4;border-bottom-color:#6385f4}
+
+/* ===== SCROLLBAR ===== */
+.sidebar-body::-webkit-scrollbar,.chat-area::-webkit-scrollbar,.tools-page::-webkit-scrollbar,.assets-page::-webkit-scrollbar,.settings-page::-webkit-scrollbar{width:3px}
+.sidebar-body::-webkit-scrollbar-track,.chat-area::-webkit-scrollbar-track,.tools-page::-webkit-scrollbar-track,.assets-page::-webkit-scrollbar-track,.settings-page::-webkit-scrollbar-track{background:transparent}
+.sidebar-body::-webkit-scrollbar-thumb,.chat-area::-webkit-scrollbar-thumb,.tools-page::-webkit-scrollbar-thumb,.assets-page::-webkit-scrollbar-thumb,.settings-page::-webkit-scrollbar-thumb{background:rgba(255,255,255,.04);border-radius:2px}
+</style>
+</head>
+<body>
+<div class="game-scene"><div class="crosshair"></div></div>
+<div class="minimap"></div>
+<div class="hotbar"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+
+<!-- ORB -->
+<div class="orb show" id="orb" onclick="openFromOrb()" title="Open MineClawd HUD">⚒</div>
+
+<!-- HUD WINDOW -->
+<div class="hud-window open" id="hud">
+  <div class="resize-handle n" data-edge="n"></div>
+  <div class="resize-handle s" data-edge="s"></div>
+  <div class="resize-handle w" data-edge="w"></div>
+  <div class="resize-handle e" data-edge="e"></div>
+  <div class="resize-handle nw" data-edge="nw"></div>
+  <div class="resize-handle ne" data-edge="ne"></div>
+  <div class="resize-handle sw" data-edge="sw"></div>
+  <div class="resize-handle se" data-edge="se"></div>
+
+  <div class="title-bar" id="titleBar">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      MineClawd
+    </div>
+    <div class="agent-card" onclick="switchTab('chat')">
+      <div class="icon">🤖</div>
+      <div class="info">
+        <span class="name">expert_builder</span>
+        <span class="persona">Yuki · 12 tools</span>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div class="win-controls">
+      <button class="maxbtn" onclick="toggleMaximize()" title="Maximize">▢</button>
+      <button onclick="minimizeToOrb()" title="Minimize">─</button>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="nav">
+      <div class="nav-item active" data-tab="chat" onclick="switchTab('chat')">💬<span class="tip">Chat</span></div>
+      <div class="nav-item" data-tab="sessions" onclick="switchTab('sessions')">📚<span class="tip">Sessions</span></div>
+      <div class="nav-item" data-tab="files" onclick="switchTab('files')">📁<span class="tip">Files</span></div>
+      <div class="nav-item" data-tab="tools" onclick="switchTab('tools')">🔧<span class="tip">Tools</span></div>
+      <div class="nav-item" data-tab="assets" onclick="switchTab('assets')">📦<span class="tip">Assets</span></div>
+      <div class="nav-item" data-tab="settings" onclick="switchTab('settings')">⚙️<span class="tip">Settings</span></div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <div class="sidebar open" id="sidebar">
+      <div class="sidebar-resizer" id="sidebarResizer"></div>
+      <div class="sidebar-header">
+        <h3 id="sidebarTitle">Sessions</h3>
+        <div class="sb-actions">
+          <button id="collapseBtn" onclick="toggleSidebar()" title="Collapse sidebar">◀</button>
+          <button id="sidebarAction" onclick="newSession()" title="New session">＋</button>
+        </div>
+      </div>
+      <div class="sidebar-body" id="sidebarBody"></div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main" id="mainContent"></div>
+  </div>
+</div>
+
+<script>
+// ===== STATE =====
+let currentTab = 'chat';
+let maximized = false;
+let sidebarWidth = 260;
+let sidebarCollapsed = false;
+
+const sessions = [
+  { title: 'Castle Base Design', preview: 'Help me design a medieval castle foundation...', time: '2h', active: true },
+  { title: 'Redstone Research', preview: 'How to build a fast piston elevator?', time: '1d', active: false },
+  { title: 'Modding Intro', preview: 'How to create a custom block?', time: '3d', active: false },
+];
+
+const files = [
+  { name: 'scripts', type: 'dir', children: [
+    { name: 'main.js', type: 'file' },
+    { name: 'builder.js', type: 'file' },
+    { name: 'utils.js', type: 'file' },
+  ]},
+  { name: 'config', type: 'dir', children: [
+    { name: 'settings.json', type: 'file' },
+    { name: 'agents.json', type: 'file' },
+  ]},
+  { name: 'README.md', type: 'file' },
+  { name: 'CHANGELOG.md', type: 'file' },
+];
+
+const editorTabs = [];
+const tools = [
+  { name: 'execute-command', desc: 'Execute Minecraft commands', cat: 'General', on: true, layer: 'L3' },
+  { name: 'ask-user-question', desc: 'Ask player a question', cat: 'General', on: true, layer: 'L2' },
+  { name: 'list-commands', desc: 'List available commands', cat: 'General', on: false, layer: 'L2' },
+  { name: 'kubejs-eval', desc: 'Evaluate KubeJS scripts', cat: 'KubeJS', on: true, layer: 'L3' },
+  { name: 'kubejs-reload', desc: 'Reload KubeJS scripts', cat: 'KubeJS', on: true, layer: 'L2' },
+  { name: 'search', desc: 'Search the web', cat: 'Web', on: true, layer: 'L2' },
+  { name: 'fetch-url', desc: 'Fetch URL content', cat: 'Web', on: true, layer: 'L2' },
+  { name: 'mod-docs', desc: 'Query mod documentation', cat: 'Mod', on: true, layer: 'L1' },
+  { name: 'file-ops', desc: 'File read/write operations', cat: 'Files', on: false, layer: 'L2' },
+];
+const toolCats = [...new Set(tools.map(t=>t.cat))];
+const assets = [
+  { icon: '🧱', id: 'minecraft:stone', count: 'x64', cat: 'items' },
+  { icon: '💎', id: 'mineclawd:ruby', count: 'x12', cat: 'items' },
+  { icon: '🪵', id: 'minecraft:oak_log', count: 'x32', cat: 'items' },
+  { icon: '🐑', id: 'minecraft:sheep', count: '', cat: 'entities' },
+  { icon: '🐄', id: 'minecraft:cow', count: '', cat: 'entities' },
+  { icon: '📋', id: '/mineclawd help', count: '', cat: 'commands' },
+];
+
+// ===== RENDER =====
+function renderSidebar() {
+  const body = document.getElementById('sidebarBody');
+  const title = document.getElementById('sidebarTitle');
+  const act = document.getElementById('sidebarAction');
+
+  if (currentTab === 'chat') {
+    title.textContent = 'Sessions'; act.style.display = 'block'; act.textContent = '＋';
+    body.innerHTML = sessions.map((s,i)=>`
+      <div class="sb-item ${s.active?'active':''}" onclick="switchSession(${i})">
+        <div class="ico">💬</div><div class="info">
+          <div class="ln">${s.title}</div><div class="sub">${s.preview}</div>
+        </div><div class="meta">${s.time}</div>
+      </div>`).join('');
+  } else if (currentTab === 'sessions') {
+    title.textContent = 'Agent & Persona'; act.style.display = 'block'; act.textContent = '＋';
+    body.innerHTML = `
+      <select class="sidebar-select"><option>expert_builder</option><option>redstone_engineer</option><option>modding_expert</option></select>
+      <select class="sidebar-select"><option>Yuki</option><option>Engineer</option><option>Architect</option></select>
+      <div style="color:rgba(255,255,255,.2);font-size:9.5px;padding:6px 4px;text-transform:uppercase;letter-spacing:.3px">Sessions</div>
+      ${sessions.map((s,i)=>`
+        <div class="sb-item ${s.active?'active':''}" onclick="switchSession(${i})">
+          <div class="ico">💬</div><div class="info">
+            <div class="ln">${s.title}</div><div class="sub">${s.preview}</div>
+          </div><div class="meta">${s.time}</div>
+        </div>`).join('')}`;
+  } else if (currentTab === 'files') {
+    title.textContent = 'Workspace'; act.style.display = 'none';
+    body.innerHTML = `<div class="filetree">${renderFileTree(files)}</div>`;
+  } else if (currentTab === 'tools') {
+    title.textContent = 'Categories'; act.style.display = 'none';
+    body.innerHTML = `
+      <div style="padding:2px 0">
+        <div class="tool-row" style="cursor:pointer" onclick="renderTools('all')">
+          <span style="color:rgba(255,255,255,.55);font-size:11.5px">All</span>
+          <span style="color:rgba(255,255,255,.18);font-size:10px;margin-left:auto">${tools.length}</span>
+        </div>
+        ${toolCats.map(c=>`
+        <div class="tool-row" style="cursor:pointer" onclick="renderTools('${c}')">
+          <span style="color:rgba(255,255,255,.55);font-size:11.5px">${c}</span>
+          <span style="color:rgba(255,255,255,.18);font-size:10px;margin-left:auto">${tools.filter(t=>t.cat===c).length}</span>
+        </div>`).join('')}
+      </div>`;
+  } else if (currentTab === 'assets') {
+    title.textContent = 'Categories'; act.style.display = 'none';
+    const cats = [...new Set(assets.map(a=>a.cat))];
+    body.innerHTML = `
+      <div style="padding:2px 0">
+        <div class="tool-row" style="cursor:pointer" onclick="renderAssets('all')">
+          <span style="color:rgba(255,255,255,.55);font-size:11.5px">All</span>
+          <span style="color:rgba(255,255,255,.18);font-size:10px;margin-left:auto">${assets.length}</span>
+        </div>
+        ${cats.map(c=>`
+        <div class="tool-row" style="cursor:pointer" onclick="renderAssets('${c}')">
+          <span style="color:rgba(255,255,255,.55);font-size:11.5px">${c.charAt(0).toUpperCase()+c.slice(1)}</span>
+          <span style="color:rgba(255,255,255,.18);font-size:10px;margin-left:auto">${assets.filter(a=>a.cat===c).length}</span>
+        </div>`).join('')}
+      </div>`;
+  } else if (currentTab === 'settings') {
+    title.textContent = 'Info'; act.style.display = 'none';
+    body.innerHTML = `
+      <div style="padding:4px 0;font-size:11px;color:rgba(255,255,255,.35);line-height:1.6">
+        <div style="margin-bottom:10px"><div style="color:rgba(255,255,255,.55);margin-bottom:3px;font-size:11px">Current State</div>
+        <div>Agent: expert_builder</div><div>Persona: Yuki</div><div>Tools: 12/29</div>
+        <div>Session: Castle Base Design</div></div>
+        <div style="color:rgba(255,255,255,.25);font-size:9px;text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px">Version</div>
+        <div>MineClawd v2.0.1</div><div>ModernUI 3.12.0</div><div>NeoForge 21.1.219</div>
+      </div>`;
+  }
+}
+
+function renderFileTree(nodes, depth=0) {
+  return nodes.map(n => {
+    if (n.type === 'dir') {
+      return `<div class="dir" onclick="toggleDir(this)">
+        <span class="arrow">▶</span><span class="ico">📁</span>${n.name}
+      </div>
+      <div class="children">${n.children ? renderFileTree(n.children, depth+1) : ''}</div>`;
+    } else {
+      const ext = n.name.split('.').pop();
+      const ico = {js:'📜',json:'📋',md:'📝',txt:'📄'}[ext]||'📄';
+      return `<div class="file" onclick="openFile('${n.name}')"><span class="ico">${ico}</span>${n.name}</div>`;
+    }
+  }).join('');
+}
+
+function toggleDir(el) {
+  el.querySelector('.arrow').classList.toggle('open');
+  el.nextElementSibling.classList.toggle('open');
+}
+
+function renderMain() {
+  const el = document.getElementById('mainContent');
+  if (currentTab === 'chat') {
+    el.innerHTML = `
+      <div class="chat-area" id="chatArea">
+        <div class="msg assistant"><div class="icon">🤖</div><div class="bubble">Hello! I'm MineClawd, your in-game assistant. How can I help you today?<br><span class="ts">14:32</span></div></div>
+        <div class="msg user"><div class="icon">😊</div><div class="bubble">Help me build a castle foundation!<br><span class="ts">14:33</span></div></div>
+        <div class="msg assistant"><div class="icon">🤖</div><div class="bubble">I've completed the castle foundation using <code>256</code> stone bricks at <code>(-150,64,200)</code>.<div class="tool-call"><span class="ok">✅</span> execute-command: fill ~ ~ ~ ~15 ~ ~ stone_bricks<br><span class="ok">✅</span> execute-command: setblock ~ ~-1 ~ stone_bricks</div><span class="ts">14:34</span></div></div>
+        <div class="typing" id="typingIndicator" style="display:none"><div class="icon">🤖</div><div class="dots"><span></span><span></span><span></span></div></div>
+      </div>
+      <div class="input-bar"><input type="text" placeholder="Ask MineClawd anything..." id="chatInput" onkeydown="if(event.key==='Enter')sendChat()"><button onclick="sendChat()">Send</button></div>`;
+  } else if (currentTab === 'sessions') {
+    el.innerHTML = `<div class="tools-page"><div class="header"><h2>Session Management</h2></div><div style="color:rgba(255,255,255,.35);font-size:11.5px">Select an agent and persona from the sidebar.</div></div>`;
+  } else if (currentTab === 'files') {
+    renderEditor(el);
+  } else if (currentTab === 'tools') {
+    renderTools('all');
+  } else if (currentTab === 'assets') {
+    renderAssets('all');
+  } else if (currentTab === 'settings') {
+    el.innerHTML = `
+      <div class="settings-page">
+        <h2>Settings</h2>
+        <div class="setting-tabs"><div class="setting-tab active" onclick="showSettingTab(this,'api')">API</div><div class="setting-tab" onclick="showSettingTab(this,'interface')">Interface</div></div>
+        <div id="settingPanel">
+          <div class="group"><h5>OpenAI</h5>
+            <div class="settings-row"><span class="label">API Key</span><input type="password" value="sk-..."></div>
+            <div class="settings-row"><span class="label">Base URL</span><input type="text" value="https://api.openai.com/v1"></div>
+            <div class="settings-row"><span class="label">Model</span><select><option>gpt-4o</option><option>gpt-4o-mini</option><option>gpt-4-turbo</option></select></div>
+          </div>
+          <div class="group"><h5>Vertex AI</h5>
+            <div class="settings-row"><span class="label">Enable</span><div class="tog" onclick="this.classList.toggle('on')"></div></div>
+          </div>
+        </div>
+      </div>`;
+  }
+}
+
+function renderEditor(container) {
+  const activeTab = editorTabs.find(t=>t.active);
+  container.innerHTML = `
+    <div class="editor-area">
+      <div class="editor-tabs" id="editorTabs">
+        ${editorTabs.length === 0 ? '<div style="padding:7px 14px;font-size:11px;color:rgba(255,255,255,.15)">No files open — click a file in the sidebar</div>' :
+        editorTabs.map((t,i)=>`
+          <div class="editor-tab ${t.active?'active':''}" onclick="switchEditorTab(${i})">
+            <span class="ico">${t.ico||'📄'}</span>${t.name}
+            <span class="close" onclick="event.stopPropagation();closeEditorTab(${i})">✕</span>
+          </div>`).join('')}
+      </div>
+      <div class="editor-body">
+        ${activeTab ? `<textarea placeholder="${activeTab.name}" spellcheck="false">${activeTab.content||''}</textarea>` :
+        '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.08);font-size:13px">Select a file to edit</div>'}
+      </div>
+    </div>`;
+}
+
+function openFile(name) {
+  const existing = editorTabs.findIndex(t=>t.name===name);
+  if (existing>=0) { switchEditorTab(existing); return; }
+  const ext = name.split('.').pop();
+  const ico = {js:'📜',json:'📋',md:'📝',txt:'📄',java:'☕'}[ext]||'📄';
+  editorTabs.push({name, active:true, ico, content:''});
+  editorTabs.forEach((t,i)=>t.active = i === editorTabs.length-1);
+  document.getElementById('sidebarBody').querySelectorAll('.file').forEach(el=>el.classList.remove('active'));
+  renderEditor(document.getElementById('mainContent'));
+}
+
+function switchEditorTab(i) {
+  editorTabs.forEach((t,idx)=>t.active = idx===i);
+  renderEditor(document.getElementById('mainContent'));
+}
+
+function closeEditorTab(i) {
+  editorTabs.splice(i,1);
+  if (editorTabs.length>0) {
+    const idx = Math.min(i, editorTabs.length-1);
+    editorTabs.forEach((t,j)=>t.active = j===idx);
+  }
+  renderEditor(document.getElementById('mainContent'));
+}
+
+function renderTools(filter) {
+  const list = filter==='all' ? tools : tools.filter(t=>t.cat===filter);
+  const cats = [...new Set(list.map(t=>t.cat))];
+  document.getElementById('mainContent').innerHTML = `
+    <div class="tools-page">
+      <div class="header"><h2>Tool Manager</h2><input type="text" placeholder="Search..." oninput="searchTools(this.value)"></div>
+      ${cats.map(c=>`
+        <div class="category"><h4>${c}</h4>
+        ${list.filter(t=>t.cat===c).map(t=>`
+          <div class="tool-row">
+            <div class="tog ${t.on?'on':''}" onclick="this.classList.toggle('on')"></div>
+            <span class="name">${t.name}</span><span class="desc">${t.desc}</span><span class="layer">${t.layer}</span>
+          </div>`).join('')}
+        </div>`).join('')}
+    </div>`;
+}
+
+function searchTools(q) {
+  const filtered = tools.filter(t=>t.name.includes(q)||t.desc.includes(q));
+  const cats = [...new Set(filtered.map(t=>t.cat))];
+  document.getElementById('mainContent').innerHTML = `
+    <div class="tools-page">
+      <div class="header"><h2>Tool Manager</h2><input type="text" placeholder="Search..." value="${q}" oninput="searchTools(this.value)"></div>
+      ${cats.map(c=>`<div class="category"><h4>${c}</h4>
+        ${filtered.filter(t=>t.cat===c).map(t=>`
+          <div class="tool-row"><div class="tog ${t.on?'on':''}" onclick="this.classList.toggle('on')"></div>
+          <span class="name">${t.name}</span><span class="desc">${t.desc}</span><span class="layer">${t.layer}</span></div>`).join('')}
+      </div>`).join('')}
+    </div>`;
+}
+
+function renderAssets(filter) {
+  const list = filter==='all' ? assets : assets.filter(a=>a.cat===filter);
+  document.getElementById('mainContent').innerHTML = `
+    <div class="assets-page">
+      <div class="header"><h2>Asset Tracker</h2><div class="filter">
+        ${['all','items','entities','commands'].map(f=>`<span class="${filter===f?'active':''}" onclick="renderAssets('${f}')">${f.charAt(0).toUpperCase()+f.slice(1)}</span>`).join('')}
+      </div></div>
+      ${list.map(a=>`<div class="asset-row">
+        <span class="ico">${a.icon}</span><span class="id">${a.id}</span>
+        ${a.count?`<span class="cnt">${a.count}</span>`:''}
+        <div class="acts">${a.cat==='entities'?'<button class="tp">TP</button>':''}${a.cat==='items'?'<button class="give">Give</button>':''}</div>
+      </div>`).join('')}
+    </div>`;
+}
+
+// ===== INTERACTIONS =====
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.tab===tab));
+  if (['chat','sessions','files','tools','assets','settings'].includes(tab)) {
+    document.getElementById('sidebar').classList.add('open');
+  }
+  renderSidebar();
+  renderMain();
+}
+
+function switchSession(i) {
+  sessions.forEach((s,idx)=>s.active = idx===i);
+  renderSidebar();
+}
+
+function newSession() {
+  sessions.unshift({title:'New Session',preview:'Start a new conversation...',time:'now',active:false});
+  switchSession(0);
+}
+
+function showSettingTab(el,tab) {
+  document.querySelectorAll('.setting-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  if (!input||!input.value.trim()) return;
+  const area = document.getElementById('chatArea');
+  const text = input.value; input.value='';
+  area.innerHTML += `<div class="msg user"><div class="icon">😊</div><div class="bubble">${text}<br><span class="ts">just now</span></div></div>`;
+  const typing = document.getElementById('typingIndicator');
+  if (typing) typing.style.display='flex';
+  setTimeout(()=>{
+    if (typing) typing.style.display='none';
+    const rs=["I'll help with that!","Done! Commands executed.","Here's what I found...","I've prepared a plan."];
+    area.innerHTML+=`<div class="msg assistant"><div class="icon">🤖</div><div class="bubble">${rs[Math.floor(Math.random()*rs.length)]}<div class="tool-call"><span class="ok">✅</span> command executed</div><span class="ts">just now</span></div></div>`;
+    if(area) setTimeout(()=>area.scrollTop=area.scrollHeight,50);
+  },1200);
+  setTimeout(()=>area.scrollTop=area.scrollHeight,50);
+}
+
+// ===== WINDOW CONTROLS =====
+function toggleMaximize() {
+  maximized = !maximized;
+  document.getElementById('hud').classList.toggle('maximized', maximized);
+}
+
+function minimizeToOrb() {
+  document.getElementById('hud').classList.remove('open');
+  document.getElementById('orb').classList.add('show');
+}
+
+function openFromOrb() {
+  document.getElementById('orb').classList.remove('show');
+  const hud = document.getElementById('hud');
+  hud.classList.add('open');
+  if (maximized) hud.classList.add('maximized');
+}
+
+// ===== SIDEBAR =====
+function toggleSidebar() {
+  sidebarCollapsed = !sidebarCollapsed;
+  document.getElementById('sidebar').classList.toggle('collapsed', sidebarCollapsed);
+  document.getElementById('collapseBtn').textContent = sidebarCollapsed ? '▶' : '◀';
+}
+
+// ===== DRAG (Title bar + Orb) =====
+(function() {
+  const hud = document.getElementById('hud');
+  const bar = document.getElementById('titleBar');
+  let dragging = false, startX, startY, startL, startT, wasMaximized=false;
+
+  bar.addEventListener('mousedown', e => {
+    if (e.target.closest('.win-controls')||e.target.closest('.agent-card')) return;
+    if (maximized) { maximized=false; hud.classList.remove('maximized'); wasMaximized=true; }
+    dragging = true;
+    const r = hud.getBoundingClientRect();
+    startX = e.clientX; startY = e.clientY; startL = r.left; startT = r.top;
+    hud.style.transition = 'none';
+    hud.style.opacity = '.7';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    hud.style.left = startL + e.clientX - startX + 'px';
+    hud.style.top = startT + e.clientY - startY + 'px';
+    hud.style.position = 'fixed'; hud.style.margin = '0';
+    if (wasMaximized) { wasMaximized=false; hud.style.width='min(90vw,1060px)'; hud.style.height='min(82vh,720px)'; }
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    hud.style.transition = 'opacity .25s, transform .25s, width .3s, height .3s, left .3s, top .3s';
+    hud.style.opacity = '';
+  });
+})();
+
+// ===== ORB DRAG + EDGE SNAP =====
+(function() {
+  const orb = document.getElementById('orb');
+  let dragging = false, ox, oy;
+
+  orb.addEventListener('mousedown', e => {
+    dragging = true;
+    ox = e.clientX; oy = e.clientY;
+    orb.style.transition = 'none';
+    orb.style.cursor = 'grabbing';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    orb.style.left = e.clientX - 24 + 'px';
+    orb.style.top = e.clientY - 24 + 'px';
+    orb.style.bottom = 'auto'; orb.style.right = 'auto';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    orb.style.cursor = 'grab';
+    // edge snap
+    const r = orb.getBoundingClientRect();
+    const cx = r.left + r.width/2, cy = r.top + r.height/2;
+    const sw = window.innerWidth, sh = window.innerHeight;
+    const snapDist = 48;
+    let snapToRight = cx > sw - snapDist;
+    let snapToBottom = cy > sh - snapDist;
+    let snapToTop = cy < snapDist;
+    let snapToLeft = cx < snapDist;
+
+    if (snapToTop) { orb.style.top = '8px'; orb.style.bottom = 'auto'; }
+    else if (snapToBottom) { orb.style.bottom = '8px'; orb.style.top = 'auto'; }
+    else { orb.style.top = cy - 24 + 'px'; orb.style.bottom = 'auto'; }
+    if (snapToRight) { orb.style.right = '8px'; orb.style.left = 'auto'; }
+    else if (snapToLeft) { orb.style.left = '8px'; orb.style.right = 'auto'; }
+    else { orb.style.left = cx - 24 + 'px'; orb.style.right = 'auto'; }
+    orb.style.transition = 'left .25s ease, top .25s ease, bottom .25s ease, right .25s ease';
+  });
+})();
+
+// ===== RESIZE =====
+(function() {
+  const hud = document.getElementById('hud');
+  let resizing=null,sx,sy,sw,sh,sl,st;
+  document.querySelectorAll('.resize-handle').forEach(h=>{
+    h.addEventListener('mousedown',e=>{
+      if(maximized) return;
+      resizing=h.dataset.edge; sx=e.clientX; sy=e.clientY;
+      const r=hud.getBoundingClientRect(); sw=r.width; sh=r.height; sl=r.left; st=r.top;
+      hud.style.transition='none'; e.stopPropagation();
+    });
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!resizing) return;
+    const dx=e.clientX-sx, dy=e.clientY-sy;
+    let w=sw,h=sh,l=sl,t=st;
+    const mw=580,mh=380;
+    if(resizing.includes('e')) w=Math.max(mw,sw+dx);
+    if(resizing.includes('w')){w=Math.max(mw,sw-dx);l=sl+sw-w;}
+    if(resizing.includes('s')) h=Math.max(mh,sh+dy);
+    if(resizing.includes('n')){h=Math.max(mh,sh-dy);t=st+sh-h;}
+    hud.style.width=w+'px'; hud.style.height=h+'px';
+    hud.style.left=l+'px'; hud.style.top=t+'px';
+    hud.style.position='fixed'; hud.style.margin='0';
+  });
+  document.addEventListener('mouseup',()=>{
+    if(!resizing) return;
+    resizing=null;
+    hud.style.transition='opacity .25s, transform .25s, width .3s, height .3s, left .3s, top .3s';
+  });
+})();
+
+// ===== SIDEBAR RESIZE =====
+(function() {
+  const sb = document.getElementById('sidebar');
+  const rz = document.getElementById('sidebarResizer');
+  let resizing=false, sx;
+  rz.addEventListener('mousedown',e=>{resizing=true;sx=e.clientX;e.preventDefault()});
+  document.addEventListener('mousemove',e=>{
+    if(!resizing) return;
+    let w = sb.offsetWidth + e.clientX - sx;
+    if (w<80) { sidebarCollapsed=true; sb.classList.add('collapsed'); }
+    else if (w>600) w=600;
+    else { sb.style.width=w+'px'; sidebarCollapsed=false; sb.classList.remove('collapsed'); }
+    sx=e.clientX;
+  });
+  document.addEventListener('mouseup',()=>resizing=false);
+})();
+
+// ===== CLICK OUTSIDE =====
+document.addEventListener('mousedown', e => {
+  if (e.target.closest('.hud-window')||e.target.closest('.orb')||e.target.closest('.resize-handle')) return;
+  const hud = document.getElementById('hud');
+  if (hud.classList.contains('open')) {
+    hud.style.opacity='.1';
+    setTimeout(()=>hud.style.opacity='',500);
+  }
+});
+
+// ===== INIT =====
+switchTab('chat');
+</script>
+</body>
+</html>

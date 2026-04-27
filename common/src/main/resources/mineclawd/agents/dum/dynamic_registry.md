@@ -1,0 +1,1 @@
+I am a dum agent dynamic registry. I will not register anything.

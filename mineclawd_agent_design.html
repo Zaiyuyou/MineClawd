@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MineClawd 智能体配置界面设计</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #0a0a0a, #1a1a2a);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .mineclawd-window {
+            width: 1300px;
+            height: 850px;
+            background: linear-gradient(145deg, #1e1e2e, #2a2a3a);
+            border-radius: 16px;
+            box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(10px);
+        }
+
+        /* 顶部会话栏 */
+        .session-bar {
+            height: 60px;
+            background: linear-gradient(90deg, #252535, #1f1f2f);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+
+        .session-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .session-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .session-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .agent-badge {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: white;
+        }
+
+        .session-controls {
+            display: flex;
+            gap: 12px;
+        }
+
+        .session-btn {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .session-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .session-btn.primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            font-weight: 600;
+        }
+
+        /* 主内容区域 */
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* 左侧对话区域 */
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .messages-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .message {
+            margin-bottom: 16px;
+            padding: 16px;
+            border-radius: 12px;
+            max-width: 85%;
+            position: relative;
+        }
+
+        .message.user {
+            background: rgba(102, 126, 234, 0.15);
+            border-left: 4px solid #667eea;
+            margin-left: auto;
+        }
+
+        .message.assistant {
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 4px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .message.agent-config {
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 4px solid #FFC107;
+        }
+
+        .message.tool-execution {
+            background: rgba(76, 175, 80, 0.1);
+            border-left: 4px solid #4CAF50;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .message-content {
+            color: rgba(255, 255, 255, 0.9);
+            line-height: 1.5;
+            font-size: 14px;
+        }
+
+        .agent-config-preview {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 8px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .input-container {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-field {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: white;
+            font-size: 14px;
+            resize: none;
+            min-height: 44px;
+            max-height: 120px;
+        }
+
+        .input-field:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .send-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 8px;
+            padding: 12px 24px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            height: 44px;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        /* 右侧智能体配置面板 */
+        .agent-panel {
+            width: 400px;
+            display: flex;
+            flex-direction: column;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .panel-tabs {
+            display: flex;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .panel-tab {
+            flex: 1;
+            padding: 12px 16px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .panel-tab.active {
+            color: #fff;
+            border-bottom-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0;
+        }
+
+        /* 智能体配置面板 */
+        .agent-config-section {
+            padding: 16px;
+        }
+
+        .agent-selection {
+            margin-bottom: 20px;
+        }
+
+        .agent-select {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: white;
+            font-size: 13px;
+        }
+
+        .agent-details {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .agent-name {
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .agent-description {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+            line-height: 1.4;
+            margin-bottom: 12px;
+        }
+
+        .agent-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Soul配置面板 */
+        .soul-config-section {
+            padding: 16px;
+            display: none;
+        }
+
+        .soul-presets {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .soul-preset {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .soul-preset:hover, .soul-preset.active {
+            background: rgba(102, 126, 234, 0.1);
+            border-color: #667eea;
+        }
+
+        .soul-preset.active {
+            background: rgba(102, 126, 234, 0.2);
+        }
+
+        .soul-name {
+            color: #fff;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .soul-desc {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 10px;
+        }
+
+        /* 工具配置面板 */
+        .tool-config-section {
+            padding: 16px;
+            display: none;
+        }
+
+        .tool-category {
+            margin-bottom: 20px;
+        }
+
+        .category-title {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tool-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .tool-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .tool-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .tool-item.active {
+            background: rgba(76, 175, 80, 0.1);
+            border-color: #4CAF50;
+        }
+
+        .tool-checkbox {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tool-item.active .tool-checkbox {
+            background: #4CAF50;
+            border-color: #4CAF50;
+        }
+
+        .tool-item.active .tool-checkbox::after {
+            content: '✓';
+            color: white;
+            font-size: 10px;
+        }
+
+        .tool-info {
+            flex: 1;
+        }
+
+        .tool-name {
+            color: #fff;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .tool-desc {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 10px;
+        }
+
+        /* 会话管理面板 */
+        .sessions-section {
+            padding: 16px;
+            display: none;
+        }
+
+        .session-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .session-item.active {
+            background: rgba(102, 126, 234, 0.1);
+            border-color: #667eea;
+        }
+
+        .session-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .session-title-small {
+            color: #fff;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .session-time {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 10px;
+        }
+
+        /* 底部状态栏 */
+        .status-bar {
+            height: 40px;
+            background: rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .status-items {
+            display: flex;
+            gap: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #4CAF50;
+        }
+
+        .status-dot.thinking {
+            background: #FFC107;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 1400px) {
+            .mineclawd-window {
+                width: 95%;
+                height: 90vh;
+            }
+            
+            .agent-panel {
+                width: 350px;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                flex-direction: column;
+            }
+            
+            .agent-panel {
+                width: 100%;
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="mineclawd-window">
+        <!-- 顶部会话栏 -->
+        <div class="session-bar">
+            <div class="session-info">
+                <div class="session-title">MineClawd 智能助手</div>
+                <div class="session-meta">
+                    <span>智能体: <span class="agent-badge" id="currentAgent">建筑专家</span></span>
+                    <span>人格: <span id="currentSoul">专业工程师</span></span>
+                    <span>工具: <span id="toolCount">12/29</span> 个启用</span>
+                </div>
+            </div>
+            <div class="session-controls">
+                <button class="session-btn" onclick="showSessions()">📚 会话列表</button>
+                <button class="session-btn" onclick="quickTools()">🔧 快速工具</button>
+                <button class="session-btn primary" onclick="newSession()">💬 新建会话</button>
+            </div>
+        </div>
+
+        <!-- 主内容区域 -->
+        <div class="main-content">
+            <!-- 左侧对话区域 -->
+            <div class="chat-section">
+                <div class="messages-area" id="messagesArea">
+                    <div class="message agent-config">
+                        <div class="message-header">
+                            <span>⚙️ 智能体配置</span>
+                            <span>刚刚</span>
+                        </div>
+                        <div class="message-content">
+                            已切换到 <strong>建筑专家</strong> 智能体配置
+                            <div class="agent-config-preview">
+                                • 工具可见性: 建筑相关工具优先<br>
+                                • Prompt策略: 专注于建筑设计和规划<br>
+                                • 上下文管理: 建筑项目上下文保持
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="message assistant">
+                        <div class="message-header">
+                            <span>🏗️ 建筑专家</span>
+                            <span>刚刚</span>
+                        </div>
+                        <div class="message-content">
+                            我是您的建筑专家助手！我可以帮助您：
+                            <ul style="margin: 8px 0 8px 20px;">
+                                <li>设计和规划建筑项目</li>
+                                <li>优化建筑结构和布局</li>
+                                <li>管理建筑资源和材料</li>
+                                <li>提供建筑技巧和建议</li>
+                            </ul>
+                            请告诉我您的建筑需求！
+                        </div>
+                    </div>
+                    
+                    <div class="message tool-execution">
+                        <div class="message-header">
+                            <span>🔧 工具执行</span>
+                            <span>2分钟前</span>
+                        </div>
+                        <div class="message-content">
+                            LLM正在使用工具: <strong>建筑规划工具</strong><br>
+                            当前智能体配置已优化工具选择和提示词策略
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="input-area">
+                    <div class="input-container">
+                        <textarea class="input-field" placeholder="输入您的建筑需求或问题..." id="messageInput"></textarea>
+                        <button class="send-btn" onclick="sendMessage()">发送</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧智能体配置面板 -->
+            <div class="agent-panel">
+                <div class="panel-tabs">
+                    <div class="panel-tab active" onclick="switchPanel('agent')">🤖 智能体</div>
+                    <div class="panel-tab" onclick="switchPanel('soul')">👤 人格</div>
+                    <div class="panel-tab" onclick="switchPanel('tool')">🔧 工具</div>
+                    <div class="panel-tab" onclick="switchPanel('session')">📚 会话</div>
+                </div>
+                
+                <div class="panel-content">
+                    <!-- 智能体配置面板 -->
+                    <div id="agentPanel" class="agent-config-section">
+                        <div class="agent-selection">
+                            <select class="agent-select" onchange="changeAgent(this.value)">
+                                <option value="general">通用助手</option>
+                                <option value="building" selected>建筑专家</option>
+                                <option value="redstone">红石工程师</option>
+                                <option value="modding">Mod开发专家</option>
+                                <option value="performance">性能优化师</option>
+                                <option value="creative">创意设计师</option>
+                            </select>
+                        </div>
+                        
+                        <div class="agent-details">
+                            <div class="agent-name">建筑专家</div>
+                            <div class="agent-description">
+                                专注于Minecraft建筑设计和规划的专业智能体。
+                                优化了建筑相关工具的可见性和提示词策略。
+                            </div>
+                            <div class="agent-stats">
+                                <div class="stat-item">
+                                    <span>工具数量:</span>
+                                    <span>12/29</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span>Prompt策略:</span>
+                                    <span>建筑优先</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span>上下文管理:</span>
+                                    <span>项目保持</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span>响应风格:</span>
+                                    <span>专业详细</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-top: 16px;">
+                            💡 提示: 智能体控制工具可见性和Prompt策略，
+                            LLM会根据当前智能体配置自动选择合适的工具。
+                        </div>
+                    </div>
+                    
+                    <!-- 人格配置面板 -->
+                    <div id="soulPanel" class="soul-config-section">
+                        <div class="soul-presets">
+                            <div class="soul-preset active">
+                                <div class="soul-name">专业工程师</div>
+                                <div class="soul-desc">严谨、专业、详细</div>
+                            </div>
+                            <div class="soul-preset">
+                                <div class="soul-name">创意设计师</div>
+                                <div class="soul-desc">创新、灵感、艺术</div>
+                            </div>
+                            <div class="soul-preset">
+                                <div class="soul-name">友好助手</div>
+                                <div class="soul-desc">友好、耐心、易懂</div>
+                            </div>
+                            <div class="soul-preset">
+                                <div class="soul-name">效率专家</div>
+                                <div class="soul-desc">高效、简洁、实用</div>
+                            </div>
+                        </div>
+                        
+                        <div style="font-size: 12px; color: rgba(255, 255, 255, 0.6);">
+                            💡 人格影响AI的回应风格和语气，
+                            但不影响工具选择和功能逻辑。
+                        </div>
+                    </div>
+                    
+                    <!-- 工具配置面板 -->
+                    <div id="toolPanel" class="tool-config-section">
+                        <div class="tool-category">
+                            <div class="category-title">建筑工具</div>
+                            <div class="tool-list">
+                                <div class="tool-item active">
+                                    <div class="tool-checkbox"></div>
+                                    <div class="tool-info">
+                                        <div class="tool-name">建筑规划工具</div>
+                                        <div class="tool-desc">设计和规划建筑项目</div>
+                                    </div>
+                                </div>
+                                <div class="tool-item active">
+                                    <div class="tool-checkbox"></div>
+                                    <div class="tool-info">
+                                        <div class="tool-name">材料计算器</div>
+                                        <div class="tool-desc">计算建筑所需材料</div>
+                                    </div>
+                                </div>
+                                <div class="tool-item">
+                                    <div class="tool-checkbox"></div>
+                                    <div class="tool-info">
+                                        <div class="tool-name">地形分析</div>
+                                        <div class="tool-desc">分析地形适应性</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="tool-category">
+                            <div class="category-title">文件工具</div>
+                            <div class="tool-list">
+                                <div class="tool-item active">
+                                    <div class="tool-checkbox"></div>
+                                    <div class="tool-info">
+                                        <div class="tool-name">蓝图管理</div>
+                                        <div class="tool-desc">管理建筑蓝图文件</div>
+                                    </div>
+                                </div>
+                                <div class="tool-item">
+                                    <div class="tool-checkbox"></div>
+                                    <div class="tool-info">
+                                        <div class="tool-name">资源包管理</div>
+                                        <div class="tool-desc">管理纹理和资源包</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-top: 16px;">
+                            💡 工具配置由智能体自动管理，
+                            用户通常不需要手动调整工具可见性。
+                        </div>
+                    </div>
+                    
+                    <!-- 会话管理面板 -->
+                    <div id="sessionPanel" class="sessions-section">
+                        <div class="session-item active">
+                            <div class="session-title-small">城堡建筑设计</div>
+                            <div class="session-time">今天 14:30</div>
+                        </div>
+                        
+                        <div class="session-item">
+                            <div class="session-title-small">红石机关设计</div>
+                            <div class="session-time">昨天 10:15</div>
+                        </div>
+                        
+                        <div class="session-item">
+                            <div class="session-title-small">Mod配置优化</div>
+                            <div class="session-time">3天前</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部状态栏 -->
+        <div class="status-bar">
+            <div class="status-items">
+                <div class="status-item">
+                    <div class="status-dot"></div>
+                    <span>智能体运行中</span>
+                </div>
+                <div class="status-item">
+                    <span>多智能体协作: 启用</span>
+                </div>
+                <div class="status-item">
+                    <span>Prompt优化: 动态</span>
+                </div>
+            </div>
+            <div class="status-items">
+                <div class="status-item">
+                    <span>MineClawd Agent v1.0.0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 面板切换功能
+        function switchPanel(panelName) {
+            // 更新标签激活状态
+            document.querySelectorAll('.panel-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.currentTarget.classList.add('active');
+            
+            // 显示对应面板
+            document.getElementById('agentPanel').style.display = 'none';
+            document.getElementById('soulPanel').style.display = 'none';
+            document.getElementById('toolPanel').style.display = 'none';
+            document.getElementById('sessionPanel').style.display = 'none';
+            
+            document.getElementById(panelName + 'Panel').style.display = 'block';
+        }
+
+        // 智能体切换功能
+        function changeAgent(agentId) {
+            const agents = {
+                'general': { name: '通用助手', soul: '友好助手', tools: '18/29' },
+                'building': { name: '建筑专家', soul: '专业工程师', tools: '12/29' },
+                'redstone': { name: '红石工程师', soul: '效率专家', tools: '10/29' },
+                'modding': { name: 'Mod开发专家', soul: '专业工程师', tools: '15/29' },
+                'performance': { name: '性能优化师', soul: '效率专家', tools: '8/29' },
+                'creative': { name: '创意设计师', soul: '创意设计师', tools: '14/29' }
+            };
+            
+            const agent = agents[agentId];
+            document.getElementById('currentAgent').textContent = agent.name;
+            document.getElementById('currentSoul').textContent = agent.soul;
+            document.getElementById('toolCount').textContent = agent.tools;
+            
+            // 添加智能体切换消息
+            const messagesArea = document.getElementById('messagesArea');
+            const agentMessage = document.createElement('div');
+            agentMessage.className = 'message agent-config';
+            agentMessage.innerHTML = `
+                <div class="message-header">
+                    <span>⚙️ 智能体配置</span>
+                    <span>刚刚</span>
+                </div>
+                <div class="message-content">
+                    已切换到 <strong>${agent.name}</strong> 智能体配置
+                    <div class="agent-config-preview">
+                        • 工具可见性: ${agent.tools} 个工具启用<br>
+                        • 人格风格: ${agent.soul}<br>
+                        • Prompt策略: 专业领域优化
+                    </div>
+                </div>
+            `;
+            messagesArea.appendChild(agentMessage);
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+
+        // 发送消息功能
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message) return;
+            
+            const messagesArea = document.getElementById('messagesArea');
+            
+            // 添加用户消息
+            const userMessage = document.createElement('div');
+            userMessage.className = 'message user';
+            userMessage.innerHTML = `
+                <div class="message-header">
+                    <span>👤 您</span>
+                    <span>刚刚</span>
+                </div>
+                <div class="message-content">${message}</div>
+            `;
+            messagesArea.appendChild(userMessage);
+            
+            // 清空输入框
+            input.value = '';
+            
+            // 模拟AI回复
+            setTimeout(() => {
+                const aiMessage = document.createElement('div');
+                aiMessage.className = 'message assistant';
+                aiMessage.innerHTML = `
+                    <div class="message-header">
+                        <span>🤖 MineClawd助手</span>
+                        <span>刚刚</span>
+                    </div>
+                    <div class="message-content">
+                        基于当前智能体配置，我正在分析您的需求...
+                    </div>
+                `;
+                messagesArea.appendChild(aiMessage);
+                messagesArea.scrollTop = messagesArea.scrollHeight;
+            }, 1000);
+            
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+
+        // 初始化页面
+        document.addEventListener('DOMContentLoaded', function() {
+            // 设置输入框回车发送
+            document.getElementById('messageInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+            
+            // 默认显示智能体面板
+            document.getElementById('agentPanel').style.display = 'block';
+        });
+    </script>
+</body>
+</html>
