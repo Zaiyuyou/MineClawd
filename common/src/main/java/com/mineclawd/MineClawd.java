@@ -50,6 +50,7 @@ import com.mineclawd.buildin.web.SearchToolExecutor;
 import com.mineclawd.foundation.tool.ToolRegistry;
 import com.mineclawd.foundation.tool.MineClawdTool;
 import com.mineclawd.foundation.tool.ToolExecutorWrapper;
+import com.mineclawd.foundation.llm.OpenAIToolCall;
 import com.mineclawd.foundation.tool.ToolStatusDescriptor;
 
 import com.mojang.brigadier.CommandDispatcher;
@@ -3256,13 +3257,15 @@ public class MineClawd {
             }
         }
         if (text != null && !text.isBlank()) {
+            // 优先发送到 GUI
             if (runtime.clientStreamEnabled()) {
                 if (!streamedThisRound) {
                     sendAgentStreamEvent(source, runtime, AgentStreamEventType.DELTA, text);
                 }
-            } else {
-                sendAgentMessage(source, text);
             }
+            
+            // 同时发送到聊天框作为备用
+            sendAgentMessage(source, text);
         }
 
         List<OpenAIToolCall> toolCalls = response.toolCalls();
@@ -3607,7 +3610,7 @@ public class MineClawd {
                     } else if (finalOutput == null || finalOutput.isBlank()) {
                         finalOutput = "ERROR: Tool returned empty output.";
                     }
-                    clearToolCallProgress(source, runtime, completionDescriptor == null ? statusDescriptor : completionDescriptor);
+                    clearToolCallProgress(source, runtime, completionDescriptor == null ? statusDescriptor : completionDescriptor, call.name(), finalOutput);
                     debugLog(runtime, "Tool output #%d: %s", callIndex, finalOutput);
                     agentLog(runtime, "Tool result: %s -> %s", call.name(), finalOutput);
                     String toolCallId = call.id();
@@ -3716,7 +3719,7 @@ public class MineClawd {
                     } else if (finalOutput == null || finalOutput.isBlank()) {
                         finalOutput = "ERROR: Tool returned empty output.";
                     }
-                    clearToolCallProgress(source, runtime, completionDescriptor == null ? statusDescriptor : completionDescriptor);
+                    clearToolCallProgress(source, runtime, completionDescriptor == null ? statusDescriptor : completionDescriptor, call.name(), finalOutput);
                     debugLog(runtime, "Tool output #%d: %s", callIndex, finalOutput);
                     agentLog(runtime, "Tool result: %s -> %s", call.name(), finalOutput);
                     JsonObject response = new JsonObject();
@@ -5467,7 +5470,7 @@ public class MineClawd {
             return null;
         }
         if (runtime.clientStreamEnabled()) {
-            sendAgentStreamEvent(source, runtime, AgentStreamEventType.TOOL_STATUS, buildToolStatusPayload(descriptor));
+            sendAgentStreamEvent(source, runtime, AgentStreamEventType.TOOL_STATUS, buildToolStatusPayload(descriptor, toolName));
             return descriptor;
         }
         sendToolStatusChatLine(source, descriptor);
@@ -5475,20 +5478,26 @@ public class MineClawd {
     }
 
     private void clearToolCallProgress(ServerCommandSource source, AgentRuntime runtime) {
-        clearToolCallProgress(source, runtime, null);
+        clearToolCallProgress(source, runtime, null, "", "");
     }
 
     private void clearToolCallProgress(
             ServerCommandSource source,
             AgentRuntime runtime,
-            ToolStatusDescriptor completionDescriptor
+            ToolStatusDescriptor completionDescriptor,
+            String toolName,
+            String result
     ) {
         if (source == null || runtime == null || isRuntimeInactive(runtime)) {
             return;
         }
         if (runtime.clientStreamEnabled()) {
-            String payload = completionDescriptor == null ? "" : buildToolStatusPayload(completionDescriptor);
-            sendAgentStreamEvent(source, runtime, AgentStreamEventType.TOOL_STATUS_CLEAR, payload);
+            JsonObject payload = new JsonObject();
+            payload.addProperty("name", toolName == null ? "" : toolName);
+            String shortText = completionDescriptor == null ? "" : normalizeStatusText(completionDescriptor.shortText(), 220);
+            payload.addProperty("short", shortText);
+            payload.addProperty("result", result == null ? "" : result);
+            sendAgentStreamEvent(source, runtime, AgentStreamEventType.TOOL_STATUS_CLEAR, payload.toString());
             return;
         }
         if (completionDescriptor != null && completionDescriptor.shortText() != null && !completionDescriptor.shortText().isBlank()) {
@@ -5496,8 +5505,9 @@ public class MineClawd {
         }
     }
 
-    private String buildToolStatusPayload(ToolStatusDescriptor descriptor) {
+    private String buildToolStatusPayload(ToolStatusDescriptor descriptor, String toolName) {
         JsonObject payload = new JsonObject();
+        payload.addProperty("name", toolName == null ? "" : toolName);
         payload.addProperty("short", descriptor == null ? "" : normalizeStatusText(descriptor.shortText(), 220));
         payload.addProperty("hover", descriptor == null ? "" : normalizeStatusText(descriptor.hoverText(), 700));
         return payload.toString();
@@ -6212,18 +6222,72 @@ public class MineClawd {
             return List.of();
         }
         List<HistoryEntry> entries = new ArrayList<>();
-        for (OpenAIMessage message : history) {
-            if (message == null || message.role() == null || message.content() == null || message.content().isBlank()) {
+        Map<String, String> toolCallIdToName = new HashMap<>();
+        for (int i = 0; i < history.size(); i++) {
+            OpenAIMessage message = history.get(i);
+            if (message == null || message.role() == null) {
                 continue;
             }
             String role = message.role().toLowerCase(Locale.ROOT);
+            if ("system".equals(role)) {
+                continue;
+            }
             if ("user".equals(role)) {
-                appendHistoryEntry(entries, new HistoryEntry(false, message.content().trim()));
-            } else if ("assistant".equals(role)) {
-                appendHistoryEntry(entries, new HistoryEntry(true, message.content().trim()));
+                if (message.content() != null && !message.content().isBlank()) {
+                    appendHistoryEntry(entries, new HistoryEntry(false, message.content().trim()));
+                }
+                continue;
+            }
+            if ("assistant".equals(role)) {
+                StringBuilder sb = new StringBuilder();
+                if (message.toolCalls() != null && !message.toolCalls().isEmpty()) {
+                    for (OpenAIToolCall tc : message.toolCalls()) {
+                        if (tc != null && tc.name() != null && !tc.name().isBlank()) {
+                            sb.append("\n@@TC|").append(tc.name()).append("|running|@@\n");
+                            if (tc.id() != null && !tc.id().isBlank()) {
+                                toolCallIdToName.put(tc.id(), tc.name());
+                            }
+                        }
+                    }
+                }
+                if (message.content() != null && !message.content().isBlank()) {
+                    sb.append(message.content().trim());
+                }
+                if (!sb.isEmpty()) {
+                    appendHistoryEntry(entries, new HistoryEntry(true, sb.toString().trim()));
+                }
+                continue;
+            }
+            if ("tool".equals(role)) {
+                String callId = message.toolCallId() == null ? "" : message.toolCallId();
+                String toolName = toolCallIdToName.getOrDefault(callId, "");
+                StringBuilder sb = new StringBuilder();
+                if (message.content() != null && !message.content().isBlank()) {
+                    String content = message.content();
+                    sb.append("\n@@TC|").append(toolName.isBlank() ? "tool" : toolName).append("|done|").append(content.replace("@@", "").replace("|", "")).append("@@\n");
+                }
+                if (!sb.isEmpty()) {
+                    appendHistoryEntry(entries, new HistoryEntry(true, sb.toString().trim()));
+                }
             }
         }
-        return entries;
+        return mergeAssistantEntries(entries);
+    }
+
+    private List<HistoryEntry> mergeAssistantEntries(List<HistoryEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return entries;
+        }
+        List<HistoryEntry> merged = new ArrayList<>();
+        for (HistoryEntry entry : entries) {
+            if (entry.assistant() && !merged.isEmpty() && merged.get(merged.size() - 1).assistant()) {
+                int last = merged.size() - 1;
+                merged.set(last, new HistoryEntry(true, merged.get(last).content() + "\n" + entry.content()));
+            } else {
+                merged.add(entry);
+            }
+        }
+        return merged;
     }
 
     private List<HistoryEntry> collectVertexHistoryEntries(List<VertexAIMessage> history) {
@@ -6511,6 +6575,9 @@ public class MineClawd {
         }
         if (player == null) {
             return false;
+        }
+        if (MineClawdNetworking.AGENT_STREAM_EVENT.equals(channel)) {
+            return true;
         }
         return !Boolean.FALSE.equals(CLIENT_GUI_ENABLED.get(player.getUuid()));
     }

@@ -41,6 +41,8 @@ public class MineClawdI18n {
         FALLBACK.put("settings.enable_gui", "Enable GUI");
         FALLBACK.put("settings.debug_mode", "Debug Mode");
         FALLBACK.put("settings.limit_tool_calls", "Limit Tool Calls");
+        FALLBACK.put("settings.show_key", "Show");
+        FALLBACK.put("settings.hide_key", "Hide");
         FALLBACK.put("settings.save", "Save");
         FALLBACK.put("settings.cancel", "Cancel");
         FALLBACK.put("settings.saved", "Settings saved. Changes will apply to new conversations.");
@@ -88,6 +90,9 @@ public class MineClawdI18n {
         FALLBACK.put("chat.attached", "file(s) attached");
         FALLBACK.put("chat.tool_running", "Running tool");
         FALLBACK.put("chat.tool_done", "Tool completed");
+        FALLBACK.put("chat.tool_prefix", "\u2699");
+        FALLBACK.put("chat.tool_prefix_done", "\u2713");
+        FALLBACK.put("chat.tool_result", "Result");
         FALLBACK.put("sidebar.no_sessions", "No sessions yet. Start a new conversation!");
         FALLBACK.put("session.just_now", "just now");
         FALLBACK.put("chat.delete_session", "Delete Session");

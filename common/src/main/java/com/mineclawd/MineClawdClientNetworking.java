@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mineclawd.foundation.assets.AssetsOverlayPayload;
 import com.mineclawd.foundation.client.AgentResponseOverlay;
+import com.mineclawd.foundation.client.ChatStreamBridge;
 import com.mineclawd.foundation.client.MineClawdKeyBindings;
 import com.mineclawd.foundation.client.SessionPayloadBridge;
 import com.mineclawd.foundation.config.MineClawdConfig;
@@ -150,6 +151,23 @@ public final class MineClawdClientNetworking {
                     });
                 });
 
+        // 注册AGENT_STREAM_EVENT事件接收器 - 这是关键修复！
+        NetworkManager.registerReceiver(NetworkManager.s2c(), MineClawdNetworking.AGENT_STREAM_EVENT,
+                (buf, context) -> {
+                    String requestId = buf.readString(64);
+                    int typeId = buf.readByte();
+                    String payload = buf.readString(262_144);
+                    AgentStreamEventType type = AgentStreamEventType.fromId(typeId);
+                    
+                    MinecraftClient client = MinecraftClient.getInstance();
+                    client.execute(() -> {
+                        // 首先转发到AgentResponseOverlay（旧UI）
+                        AgentResponseOverlay.handleStreamEvent(requestId, type, payload);
+                        // 然后转发到ChatStreamBridge（新GUI）
+                        ChatStreamBridge.forward(requestId, type, payload);
+                    });
+                });
+
         NetworkManager.registerReceiver(NetworkManager.s2c(), MineClawdNetworking.OPEN_ASSETS,
                 (buf, context) -> {
                     String payload = buf.readString(262_144);
@@ -193,25 +211,7 @@ public final class MineClawdClientNetworking {
                     });
                 });
 
-        NetworkManager.registerReceiver(NetworkManager.s2c(), MineClawdNetworking.AGENT_STREAM_EVENT,
-                (buf, context) -> {
-                    String requestId = buf.readString(64);
-                    AgentStreamEventType type = AgentStreamEventType.fromId(buf.readByte() & 0xFF);
-                    String payload = buf.readString(32767);
-                    MineClawd.LOGGER.info("[NetworkEvent] Received stream event: type={}, payload_len={}, thread={}", 
-                        type, payload != null ? payload.length() : 0, Thread.currentThread().getName());
-                    MinecraftClient client = MinecraftClient.getInstance();
-                    MineClawd.LOGGER.info("[NetworkEvent] Submitting to main thread via client.execute()");
-                    client.execute(() -> {
-                        MineClawd.LOGGER.info("[MainThread] Executing on thread: {}", Thread.currentThread().getName());
-                        // Forward to GUI first
-                        MineClawd.LOGGER.info("[MainThread] Calling ChatStreamBridge.forward()");
-                        com.mineclawd.foundation.client.ChatStreamBridge.forward(requestId, type, payload);
-                        // Then handle overlay rendering
-                        MineClawd.LOGGER.info("[MainThread] Calling AgentResponseOverlay.handleStreamEvent()");
-                        AgentResponseOverlay.handleStreamEvent(requestId, type, payload);
-                    });
-                });
+
 
         ClientTickEvent.CLIENT_POST.register(AgentResponseOverlay::tick);
         ClientGuiEvent.RENDER_HUD.register((graphics, delta) ->

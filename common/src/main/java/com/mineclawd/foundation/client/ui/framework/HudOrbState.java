@@ -13,6 +13,7 @@ public class HudOrbState {
     private static boolean sHasSavedPos;
     private static int sSavedSidebarW;
     private static boolean sSavedSidebarCollapsed;
+    private static boolean sHasSavedSidebar;
 
     public static void show() { sVisible = true; }
     public static void hide() { sVisible = false; }
@@ -44,8 +45,9 @@ public class HudOrbState {
     public static void saveSidebarState(int width, boolean collapsed) {
         sSavedSidebarW = width;
         sSavedSidebarCollapsed = collapsed;
+        sHasSavedSidebar = true;
     }
-    public static boolean hasSavedSidebarState() { return sSavedSidebarW > 0; }
+    public static boolean hasSavedSidebarState() { return sHasSavedSidebar; }
     public static int getSavedSidebarW() { return sSavedSidebarW; }
     public static boolean getSavedSidebarCollapsed() { return sSavedSidebarCollapsed; }
 }
